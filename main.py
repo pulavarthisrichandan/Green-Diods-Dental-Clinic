@@ -53,10 +53,12 @@ app = FastAPI()
 OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
-OPENAI_REALTIME_URL = (
-    "wss://api.openai.com/v1/realtime"
-    "?model=gpt-4o-realtime-preview-2024-12-17"
-)
+# OPENAI_REALTIME_URL = (
+#     "wss://api.openai.com/v1/realtime"
+#     "?model=gpt-4o-realtime-preview-2024-12-17"
+# )
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
+
 
 VOICE                        = "sage"
 TEMPERATURE                  = 0.7
@@ -1119,8 +1121,9 @@ async def handle_media_stream(websocket: WebSocket):
                         err = data.get("error", {})
                         print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}")
 
-            except websockets.exceptions.ConnectionClosed:
-                print("[OpenAI] Connection closed")
+            except websockets.exceptions.ConnectionClosed as e:
+                print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}")
+
             except Exception as e:
                 print(f"[OpenAI RECEIVE ERROR] {e}")
             finally:

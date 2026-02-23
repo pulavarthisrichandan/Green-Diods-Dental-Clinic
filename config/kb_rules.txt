@@ -1,0 +1,269 @@
+# ============================================================
+# KNOWLEDGE BASE RULES — DentalBot v2
+# Source: primarydental.com.au + clinical knowledge
+# Used for: Tier 3 detailed treatment questions only
+# ============================================================
+
+[SCOPE]
+Answer ONLY questions about:
+- What a dental treatment involves (procedure explanation)
+- How to prepare for a treatment
+- Post-treatment care and precautions
+- General dental health advice
+- What to expect during/after a procedure
+
+DO NOT answer:
+- Specific medication names or dosages → "Please consult your dentist"
+- Medical diagnoses → "Please consult your dentist"
+- Drug interactions → "Please consult your dentist"
+- Anything requiring a clinical examination → "Please consult your dentist"
+- Pricing or offers → use business_rules.txt (get_business_information)
+
+[TREATMENTS]
+
+Teeth Cleaning and Check-Up:
+  What to expect: The dentist will examine your teeth, gums and mouth
+    for signs of decay, gum disease or other issues. A professional
+    clean removes plaque and tartar build-up from all surfaces.
+  Duration: Approximately 45–60 minutes.
+  Preparation: Brush and floss before your appointment. Let the dentist
+    know about any pain, sensitivity or changes you've noticed.
+  Aftercare: Maintain regular brushing and flossing. Book your next
+    check-up in 6 months.
+
+Dental Fillings:
+  What to expect: The decayed portion of the tooth is removed and
+    filled with composite resin (tooth-coloured material). Local
+    anaesthetic is used so you won't feel pain during the procedure.
+  Duration: 30–60 minutes per tooth.
+  Preparation: Eat before your appointment as you may be numb
+    for a few hours after.
+  Aftercare: Avoid eating for 1–2 hours after. Avoid very hot or cold
+    foods for 24 hours. Mild sensitivity is normal for a few days.
+
+Root Canal Treatment:
+  What to expect: The infected pulp inside the tooth is removed, the
+    root canal is cleaned, shaped and sealed. Local anaesthetic is used
+    throughout. May require 2–3 visits depending on complexity.
+  Duration: 60–90 minutes per session.
+  Preparation: Eat a light meal beforehand. Inform dentist of any
+    current medications.
+  Aftercare: Mild soreness for a few days — completely normal. Avoid
+    chewing on that side until fully restored with a crown. Over-the-
+    counter pain relief may be used as directed by your dentist.
+
+Dental Crowns and Bridges:
+  What to expect: A crown is a custom-made cap placed over a damaged
+    tooth to restore its shape, size and strength. A bridge replaces
+    one or more missing teeth by anchoring to adjacent teeth.
+    First visit: tooth preparation and impressions taken.
+    Second visit: permanent crown/bridge fitted.
+  Duration: Two appointments of approximately 60 minutes each.
+  Preparation: A temporary crown will be placed between visits —
+    treat it gently.
+  Aftercare: Temporary crown sensitivity is normal. Avoid sticky or
+    hard foods until the permanent crown is fitted. Once permanent,
+    care for it like a natural tooth.
+
+Dental Implants:
+  What to expect: A titanium post is surgically placed into the jawbone
+    to act as an artificial tooth root. After a healing period of
+    3–6 months (osseointegration), a custom crown is attached on top.
+    This is the most natural-looking and permanent tooth replacement.
+  Duration: Multiple appointments over 3–9 months total.
+  Preparation: A thorough dental examination and X-rays are taken
+    first to assess bone density.
+  Aftercare: Follow post-surgical care instructions carefully. Avoid
+    smoking as it significantly affects healing. Maintain excellent
+    oral hygiene. Attend all follow-up appointments.
+
+All-on-4 Dental Implants:
+  What to expect: Four dental implants are strategically inserted into
+    the jaw and a full arch of fixed teeth is attached on the same day.
+    This is a permanent, stable solution for patients who have lost
+    most or all of their teeth. Results are immediate — you leave with
+    a new set of fixed teeth.
+  Duration: The surgical procedure is typically completed in one day,
+    with follow-up appointments for the final prosthesis.
+  Preparation: Comprehensive assessment, X-rays and 3D scans are
+    required before surgery.
+  Aftercare: Soft food diet for several weeks. Strict oral hygiene
+    routine. Regular check-ups every 6 months essential.
+
+Wisdom Teeth Removal:
+  What to expect: The tooth is removed under local anaesthetic.
+    Surgical cases (impacted teeth) may require sedation, incisions
+    and stitches. Simple cases are straightforward extractions.
+  Duration: 30–60 minutes per tooth.
+  Preparation: Fast for 6 hours before if sedation is used. Arrange
+    transport home as you won't be able to drive after sedation.
+  Aftercare: Swelling and mild discomfort for 3–5 days is normal.
+    Apply ice pack to cheek. Eat soft foods only. Avoid smoking.
+    Keep the area clean — rinse gently with warm salt water after
+    24 hours. Stitches dissolve on their own in 7–10 days.
+
+Emergency Dental Services:
+  What to expect: We accommodate emergency patients on the same day.
+    The dentist will assess and manage pain, broken teeth, sudden
+    injuries or denture breakages as a priority. Treatment plan is
+    provided after the initial assessment.
+  What qualifies: Severe toothache, broken or chipped tooth, dental
+    injury, lost filling or crown, swollen face or gum, loose tooth
+    in adults, denture breakage.
+  What to do before arrival: Rinse with warm water. If a tooth is
+    knocked out, keep it moist (in milk or saliva) and come in
+    immediately — time is critical.
+
+Clear Aligners:
+  What to expect: A series of clear, removable, custom-made plastic
+    trays gradually shift teeth into the correct position. Each tray
+    is worn for 1–2 weeks before moving to the next set. Virtually
+    invisible when worn.
+  Duration: Typically 6–18 months depending on complexity.
+  Preparation: Initial consultation to assess suitability. Digital
+    scans or impressions taken to plan treatment.
+  Aftercare: Wear aligners 20–22 hours per day without fail. Remove
+    only to eat, drink (except water) and clean teeth. Clean aligners
+    daily with a soft toothbrush. Attend regular check-up appointments
+    every 6–8 weeks.
+
+Custom Mouthguards:
+  What to expect: Impressions of your teeth are taken and sent to a
+    dental lab where a custom-fit mouthguard is made specifically for
+    your mouth. Far superior protection compared to over-the-counter
+    mouthguards which can shift and provide poor protection.
+  Duration: Two short appointments — impressions taken, then fitting.
+  Who needs one: Anyone playing contact sports (football, rugby,
+    boxing, basketball, hockey, martial arts). Also used for teeth
+    grinding (bruxism) at night.
+  Aftercare: Rinse after use, store in provided case. Bring to dental
+    appointments to check fit as teeth shift over time.
+
+Dental Veneers:
+  What to expect: Thin porcelain or composite shells are bonded to
+    the front surface of teeth to improve their appearance.
+    A small amount of enamel is permanently removed from the tooth
+    surface first. Porcelain veneers require two visits;
+    composite can be done in one.
+  Duration: Two appointments for porcelain (lab-made).
+    One appointment for composite (done chairside).
+  Preparation: Discuss goals and desired shade with your dentist.
+    The process is irreversible — take your time deciding.
+  Aftercare: Avoid biting hard objects (ice, pens, nails). Brush and
+    floss normally. Veneers are permanent. Porcelain lasts
+    10–15 years; composite 5–7 years.
+
+Tooth Extraction:
+  What to expect: The tooth and surrounding area is numbed with local
+    anaesthetic. The tooth is loosened using dental instruments and
+    removed. Simple extractions are quick and straightforward.
+  Duration: 20–40 minutes.
+  Preparation: Inform your dentist of all current medications and
+    medical conditions before the procedure.
+  Aftercare: Bite on gauze for 30–45 minutes to stop bleeding.
+    Do NOT rinse for 24 hours — it dislodges the clot. Eat soft
+    foods only. No smoking for at least 48 hours. Mild pain and
+    swelling for 2–3 days is normal.
+
+Gum Disease Treatment (Periodontitis):
+  What to expect: Deep cleaning (scale and root planing) removes
+    plaque and tartar from below the gumline where regular brushing
+    cannot reach. Local anaesthetic may be used. Severe cases may
+    require additional treatment or referral.
+  Duration: 60–90 minutes per session. May require 2–4 visits.
+  Preparation: Brush and floss before your appointment. Be honest
+    about your oral hygiene routine — the dentist is here to help.
+  Aftercare: Gums may be tender and slightly swollen for a few days —
+    completely normal. Maintain daily brushing and flossing. Follow-
+    up appointments are critical to monitor recovery. Improvement
+    should be visible within a few weeks.
+
+Dentures:
+  What to expect: Custom-made removable replacements for missing teeth.
+    Measurements, impressions and shade selection are taken at the first
+    visit and sent to a dental lab. The dentures are fitted and adjusted
+    at a follow-up visit. May require a few adjustments for comfort.
+  Duration: Multiple appointments. Lab turnaround typically 1–3 weeks.
+  Types:
+    Full dentures — replace all teeth in an arch.
+    Partial dentures — replace several missing teeth.
+  Aftercare: Initial soreness and increased saliva are normal and
+    temporary. Remove and clean dentures every day. Soak overnight
+    in a denture-cleaning solution. Never sleep with dentures in
+    during the first few weeks. Attend regular check-ups.
+
+Braces:
+  What to expect: Metal or ceramic brackets are bonded to the teeth
+    and connected by wires that apply gentle pressure to gradually
+    move teeth and correct bite alignment. Adjustments are made at
+    regular visits every 4–6 weeks.
+  Duration: Typically 12–24 months depending on complexity.
+  Preparation: A thorough orthodontic assessment and X-rays are taken
+    to plan treatment. Some teeth may need to be extracted first.
+  Aftercare: Avoid hard, sticky or chewy foods (popcorn, caramel,
+    hard lollies, raw carrots). Brush carefully around brackets after
+    every meal. Use a floss threader or interdental brush to clean
+    between teeth. Wear retainer after braces are removed — this is
+    essential to keep teeth in position.
+
+Teeth Whitening:
+  What to expect: A professional-strength bleaching gel is applied to
+    the teeth and activated by a special light (in-chair). Results are
+    immediate and dramatic. Take-home kits use a lower concentration
+    gel worn in custom trays for 1–2 weeks.
+  Duration: In-chair: approximately 60–90 minutes.
+    Take-home: 30–60 minutes per day for 1–2 weeks.
+  Preparation: A check-up is recommended before whitening to ensure
+    teeth and gums are healthy. Whitening does not work on crowns,
+    veneers or fillings.
+  Aftercare: Teeth may be sensitive for 24–48 hours — completely
+    normal. Avoid staining foods and drinks (coffee, tea, red wine,
+    curry) for at least 48 hours after. Results last 6–12 months
+    depending on diet and oral hygiene.
+
+Zoom Whitening (In-Chair):
+  What to expect: Zoom is a professional in-chair whitening system
+    that can lighten teeth by up to 8 shades in just one hour.
+    A hydrogen peroxide gel is applied and activated using the Zoom
+    light. Three 15-minute sessions are completed in one appointment.
+  Duration: Approximately 60–75 minutes total.
+  Preparation: A dental check-up is recommended first. Teeth cleaning
+    before the session gives the best results.
+  Aftercare: Sensitivity for 24–48 hours is normal. Avoid staining
+    foods/drinks for 48 hours. Use sensitivity toothpaste if needed.
+    Results can last 1–2 years with good oral hygiene.
+
+Children's Dentistry:
+  What to expect: Gentle check-ups, professional cleans, fluoride
+    treatments, fissure sealants and preventive care tailored
+    specifically for children. We create a calm, friendly and
+    fun environment to help children feel comfortable and reduce
+    dental anxiety from a young age.
+  Duration: 30–45 minutes.
+  At what age to start: First dental visit recommended by age 1 or
+    when the first tooth appears.
+  Preparation: Bring your child's dental history if available.
+    Bring a favourite toy or comfort item. Talk positively about the
+    visit beforehand to reduce anxiety.
+  Aftercare: Supervise brushing until age 7–8. Use child-strength
+    fluoride toothpaste. Limit sugary snacks and drinks.
+    Check eligibility for the Child Dental Benefits Schedule (CDBS)
+    — your child may qualify for free dental care.
+
+[GENERAL DENTAL HEALTH TIPS]
+- Brush teeth twice daily with fluoride toothpaste.
+- Floss at least once per day.
+- Replace your toothbrush every 3 months.
+- Limit sugary food and drinks.
+- Visit the dentist every 6 months for routine check-ups.
+- Drink plenty of water, especially fluoridated tap water.
+- Avoid smoking — it significantly increases risk of gum disease
+  and oral cancer.
+- Wear a mouthguard during contact sports.
+- See a dentist promptly if you notice bleeding gums, tooth pain,
+  or sensitivity that doesn't resolve within a few days.
+
+[DISCLAIMER]
+For any specific medical concerns, pain, or conditions requiring
+clinical diagnosis, please consult your dentist directly.
+The bot cannot provide medical diagnoses or medication recommendations.

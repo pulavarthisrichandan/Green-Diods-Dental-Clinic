@@ -1,0 +1,9 @@
+{
+  "intent": "APPOINTMENT | UPDATE_CANCEL | COMPLAINT | GENERAL_ENQUIRY | BUSINESS | KNOWLEDGE_BASE | UNKNOWN",
+  "sub_intent": null,
+  "response": null,
+  "requires_verification": false,
+  "session_verified": false,
+  "missing_fields": [],
+  "ready_for_execution": false
+}

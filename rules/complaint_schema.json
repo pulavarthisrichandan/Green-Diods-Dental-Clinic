@@ -1,0 +1,14 @@
+{
+  "intent": "COMPLAINT",
+  "complaint_category": "GENERAL | TREATMENT",
+  "patient_name": null,
+  "contact_number": null,
+  "contact_number_confirmed": false,
+  "complaint_description": null,
+  "treatment_name": null,
+  "dentist_name": null,
+  "treatment_date": null,
+  "treatment_time": null,
+  "missing_fields": [],
+  "ready_for_execution": false
+}

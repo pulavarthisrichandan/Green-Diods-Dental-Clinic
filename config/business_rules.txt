@@ -1,0 +1,211 @@
+# ============================================================
+# BUSINESS RULES — Primary Dental Clinic
+# SOURCE: primarydental.com.au (manually extracted)
+# Last Updated: February 2026
+# ============================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLINIC INFO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Name    : Primary Dental Clinic
+Website : primarydental.com.au
+Phone   : 1300 978 214
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUSINESS HOURS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Monday – Friday : 9:00 AM – 6:00 PM
+Saturday        : CLOSED
+Sunday          : CLOSED
+Public Holidays : CLOSED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DENTISTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Dr. Emily Carter    – General Dentistry
+Dr. James Nguyen   – Cosmetic & Restorative Dentistry
+Dr. Sarah Mitchell – Orthodontics & Periodontics
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAYMENT METHODS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- EFTPOS, Visa, Mastercard, American Express
+- Cash
+- HICAPS (on-the-spot health fund claims)
+- Afterpay and ZIP Pay available (interest-free payment plans)
+- Child Dental Benefits Schedule (CDBS) — bulk billing for eligible children
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SERVICES & PRICING (AUD)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. TEETH CLEANING AND CHECK-UP
+   Price : From $180
+   About : Regular routine check-ups are important — not just for the
+           teeth but also the gums and the mouth as a whole. If there
+           are any changes that need to be treated, such as tooth decay
+           or gum disease, these can often be detected in the early
+           stages, making treatment more straightforward.
+
+2. DENTAL IMPLANTS
+   Price : From $2,500 per implant (single tooth)
+   About : Missing or severely damaged teeth can really impact how you
+           go about your day-to-day life. If you feel self-conscious,
+           experience pain or struggle to eat, dental implant surgery
+           will help restore your natural, healthy smile.
+
+3. ALL-ON-4 DENTAL IMPLANTS
+   Price : From $18,000 – $25,000 per arch
+   About : A permanent and stable solution for patients looking for
+           immediate replacement of all teeth on 4 dental implants.
+           Four implants are inserted into the jaw and teeth are
+           affixed, giving a natural-looking and feeling smile.
+
+4. DENTAL FILLINGS
+   Price : From $150 – $300 per tooth (composite/tooth-coloured)
+   About : Damaged or decaying teeth can be restored to their usual
+           function, appearance and feel through dental fillings.
+           Commonly used as treatment for cavities. Usually
+           non-invasive and completed in just one visit.
+
+5. WISDOM TEETH REMOVAL
+   Price : From $300 – $500 per tooth (simple)
+           From $500 – $900 per tooth (surgical)
+   About : Wisdom teeth can cause pain, discomfort and long-term
+           impact if not removed professionally. Oral surgery is
+           often needed to extract wisdom teeth safely and effectively.
+
+6. EMERGENCY DENTAL SERVICES
+   Price : From $150 – $250 (emergency consultation & assessment)
+   About : We understand that conditions like toothache, broken tooth,
+           sudden injury or denture breakages require urgent attention.
+           We will always do our best to accommodate emergency cases
+           on the same day, regardless of whether you've seen us before.
+
+7. CLEAR ALIGNERS
+   Price : From $2,500 – $9,000 (full treatment, complexity dependent)
+   About : An alternative to traditional braces. Experience the
+           transformative power of a straight, radiant smile that goes
+           beyond aesthetics — it also means a healthier, better-
+           functioning mouth. Expert independent dentists offer a range
+           of clear aligner options.
+
+8. DENTAL CROWNS AND BRIDGES
+   Price : From $1,500 – $2,200 per crown (ceramic/porcelain)
+           From $1,800 – $3,000 per bridge (3-unit)
+   About : Your teeth can get damaged, worn down or suffer decay after
+           years of use, cracks or trauma. Crowns and bridges help
+           keep your smile protected and restore normal function.
+
+9. ROOT CANAL TREATMENT
+   Price : From $900 – $1,800 per tooth (complexity dependent)
+   About : Root canal treatment (endodontic treatment) is needed when
+           a tooth's nerve is infected, inflamed or beginning to die.
+           It saves the tooth and eliminates pain caused by infection.
+
+10. CUSTOM MOUTHGUARDS
+    Price : From $220 – $400
+    About : A mouthguard protects your teeth and mouth from injury.
+            Commonly needed for those who play contact sports.
+            Custom-fit professional mouthguards are the only way to
+            properly protect your smile.
+
+11. DENTAL VENEERS
+    Price : From $1,200 – $2,000 per tooth (porcelain)
+            From $600 – $900 per tooth (composite)
+    About : Dental veneers are ideal if you are experiencing chipped,
+            stained, discoloured or crooked teeth. They improve the
+            overall appearance and feel of your smile. Available in
+            porcelain/ceramic or direct composite.
+
+12. TOOTH EXTRACTION
+    Price : From $180 – $350 (simple extraction)
+    About : Sometimes teeth are so severely damaged, broken or worn
+            down that tooth extraction is the right choice. We always
+            explore every option before recommending extraction.
+
+13. GUM DISEASE TREATMENT (PERIODONTITIS)
+    Price : From $200 – $600 per session
+    About : An infection or inflammation of the gums is a sign of
+            gum disease (Periodontitis). If you feel tender,
+            experience bleeding or see inflamed gums, see your
+            dentist as soon as possible to minimise pain and damage.
+
+14. DENTURES
+    Price : From $1,200 – $1,800 (partial dentures)
+            From $1,800 – $3,000 (full arch dentures)
+    About : Dentures are artificial teeth that look just like the
+            real thing, made from durable acrylic or metal. They are
+            removable, great for replacing missing teeth and help
+            retain normal speech and chewing capacity.
+
+15. BRACES
+    Price : From $4,500 – $8,000 (full treatment)
+    About : Braces (banding) are the best choice when you want to
+            alter your bite and overall alignment. Cost-effective and
+            able to address a wide range of dental issues.
+
+16. TEETH WHITENING
+    Price : From $500 – $1,000 (in-chair professional whitening)
+            From $350 – $500 (take-home whitening kit)
+    About : Teeth whitening is the perfect, non-invasive way to lift
+            the colour of your teeth without permanent treatments.
+            Everyone wants a clean, white smile — it's the perfect
+            way to look and feel fresh and healthy.
+
+17. ZOOM WHITENING (IN-CHAIR)
+    Price : From $650
+            4 equal payments of $162.50 with Afterpay or ZIP Pay
+    About : Enjoy up to 8 shades whiter teeth in just one hour with
+            Zoom in-chair teeth whitening. Speak to your dentist about
+            this fast, effective whitening option.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CURRENT OFFERS & PROMOTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+OFFER 1 — KIDS DENTAL OFFER (New Patient, under 18)
+  Includes : Checkup + X-Rays + Scale & Clean + Fluoride
+  Price    : $99
+  Payment  : 4 equal payments of $24.75 with Afterpay or ZIP Pay
+  Note     : Your child may qualify for FREE dental under the
+             Child Dental Benefits Schedule (CDBS) if you receive
+             a Government Benefit such as:
+             Family Tax Benefit Part A, Youth Allowance, ABSTUDY,
+             Disability Support Pension, Parenting Payment,
+             Special Benefit, Carer Payment, Double Orphan Pension,
+             or Veterans Children Education Scheme.
+             Check eligibility by calling Medicare on 132 011,
+             or call us and our friendly reception staff can check
+             this for you.
+
+OFFER 2 — NEW PATIENT PACK ADULT (Including X-Ray)
+  Includes : Checkup + X-Rays + Scale & Clean + Fluoride
+  Price    : From $199
+  Payment  : 4 equal payments of $49.75 with Afterpay or ZIP Pay
+
+OFFER 3 — DENTAL CHECK-UP & TEETH WHITENING
+  Includes : Checkup + Teeth Whitening
+  Price    : From $499
+  Payment  : 4 equal payments of $124.75 with Afterpay or ZIP Pay
+
+OFFER 4 — PRENATAL DENTAL CHECK-UP
+  Includes : Pre-Conception Periodontal Exam + Checkup + X-Rays
+             + Scale & Clean + Fluoride
+  Price    : From $199
+  Payment  : 4 equal payments of $49.75 with Afterpay or ZIP Pay
+
+OFFER 5 — ZOOM WHITENING SPECIAL
+  Includes : Enjoy up to 8 shades whiter teeth in just one hour
+  Price    : From $650
+  Payment  : 4 equal payments of $162.50 with Afterpay or ZIP Pay
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRICING DISCLAIMER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+All prices are estimates in AUD and include GST.
+Final cost depends on individual complexity and requirements.
+Health fund rebates may apply — patients should bring their
+health fund card. Afterpay and ZIP Pay available on all services.
+*Offer prices marked with * are subject to terms and conditions.
+

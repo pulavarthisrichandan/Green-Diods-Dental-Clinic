@@ -1,0 +1,60 @@
+# ============================================================
+# INSURANCE & WARRANTY RULES
+# ============================================================
+# IMPORTANT: The bot reads ONLY from this file for all
+# insurance and warranty questions. Never use KB for these.
+# Edit this file whenever policies change.
+# ============================================================
+
+[INSURANCE]
+
+Insurance types we accept:
+- Medibank Private
+- Bupa
+- HCF
+- NIB
+- CBHS
+- HBF
+- AHM
+
+Procedure for using insurance:
+1. Bring your valid health insurance membership card on the day of your appointment.
+2. Our reception team will process your claim on-site using HICAPS (Health Industry Claims and Payments Service).
+3. Your insurance rebate is applied immediately — you only pay the gap amount remaining after the rebate.
+4. For information on how much your specific plan covers, please contact your insurance provider directly.
+
+IMPORTANT NOTE:
+For any in-depth questions about your specific coverage, rebate amounts,
+eligibility, or claim procedures beyond what is listed here, please consult
+your dentist or contact your insurance provider for better guidance.
+
+[WARRANTY]
+
+We offer a warranty on select dental treatments.
+
+Key warranty conditions:
+1. An additional fee is required to process a warranty claim.
+2. Warranty is only valid if:
+   a. The treated tooth has NOT been subjected to physical trauma or injury after treatment.
+   b. The patient has followed all post-treatment care instructions provided by the dentist.
+   c. The patient has attended all recommended follow-up appointments.
+   d. Damage caused by teeth grinding (bruxism) is NOT covered unless a prescribed mouthguard was used consistently.
+   e. The warranty period varies by treatment — please confirm the exact period with your dentist at time of treatment.
+3. To make a warranty claim, call us to book a review appointment.
+4. Warranty is non-transferable and applies only to the original patient.
+5. Warranty does not cover normal wear and tear.
+
+IMPORTANT NOTE:
+For any in-depth or detailed questions about warranty terms, claim procedures,
+or whether your specific situation qualifies, please consult your dentist
+for better guidance.
+
+# ============================================================
+# HOW THE BOT USES THIS FILE:
+# - For insurance questions: share the [INSURANCE] section above
+# - For warranty questions: share the [WARRANTY] section above
+# - If user asks anything more detailed than what is written here:
+#   "For more detailed information on this, I'd recommend speaking
+#    directly with your dentist who can guide you better."
+# - NEVER answer beyond what is written in this file.
+# ============================================================

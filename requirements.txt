@@ -1,0 +1,24 @@
+# fastapi
+# uvicorn
+# websockets
+# openai>=1.30.0
+# python-dotenv
+# psycopg2-binary
+# httpx
+# numpy
+# soxr
+# fastapi
+# uvicorn[standard]
+# websockets
+# python-dotenv
+# requests
+
+
+fastapi
+uvicorn[standard]
+websockets
+python-dotenv
+openai
+requests
+psycopg2-binary   # if DB used
+flask

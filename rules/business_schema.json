@@ -1,0 +1,20 @@
+{
+  "intent": "BUSINESS",
+  "business_type": "PATIENT | AGENT",
+  "patient_query_answer": null,
+  "agent_details": {
+    "caller_name": null,
+    "company_name": null,
+    "purpose": null,
+    "contact_number": null
+  },
+  "order_update": {
+    "patient_id": null,
+    "first_name": null,
+    "last_name": null,
+    "product_name": null
+  },
+  "missing_fields": [],
+  "ready_for_execution": false
+}
+

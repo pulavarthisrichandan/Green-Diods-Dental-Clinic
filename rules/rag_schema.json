@@ -1,0 +1,33 @@
+{
+  "intent": "APPOINTMENT",
+  "customer_type": "NEW | EXISTING | UNKNOWN",
+  "verification": {
+    "last_name": null,
+    "date_of_birth": null,
+    "contact_number": null,
+    "verified": false,
+    "contact_number_confirmed": false
+  },
+  "new_patient": {
+    "first_name": null,
+    "last_name": null,
+    "date_of_birth": null,
+    "contact_number": null,
+    "has_insurance": null,
+    "insurance_provider": null
+  },
+  "appointment": {
+    "patient_id": null,
+    "first_name": null,
+    "last_name": null,
+    "date_of_birth": null,
+    "contact_number": null,
+    "preferred_treatment": null,
+    "preferred_date": null,
+    "preferred_time": null,
+    "preferred_dentist": null
+  },
+  "missing_fields": [],
+  "ready_for_execution": false,
+  "confirmed_by_user": false
+}

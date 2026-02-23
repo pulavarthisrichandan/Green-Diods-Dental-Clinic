@@ -1,0 +1,28 @@
+# ============================================================
+# CLINIC INFORMATION
+# Edit this file to update hours, location, contact.
+# ============================================================
+
+[CLINIC NAME]
+Primary Dental Clinic
+
+[HOURS]
+Monday    : 9:00 AM – 6:00 PM
+Tuesday   : 9:00 AM – 6:00 PM
+Wednesday : 9:00 AM – 6:00 PM
+Thursday  : 9:00 AM – 6:00 PM
+Friday    : 9:00 AM – 6:00 PM
+Saturday  : CLOSED
+Sunday    : CLOSED
+Public Holidays : CLOSED
+
+[CONTACT]
+Phone : (03) XXXX XXXX
+Email : info@primarydentalclinic.com.au
+
+[LOCATION]
+Address : [Your Clinic Address], Melbourne, VIC, Australia
+
+[EMERGENCY]
+For dental emergencies during business hours, please call us directly.
+We offer same-day emergency appointments where possible.

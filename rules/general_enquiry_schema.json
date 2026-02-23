@@ -1,0 +1,15 @@
+{
+  "intent": "GENERAL_ENQUIRY",
+  "caller_type": "PATIENT | ANONYMOUS",
+  "verification": {
+    "last_name": null,
+    "date_of_birth": null,
+    "contact_number": null,
+    "verified": false
+  },
+  "enquiry_type": "ORDER_STATUS | APPOINTMENT_INFO | TREATMENT_INFO | CLINIC_INFO | OTHER",
+  "enquiry_description": null,
+  "response_to_user": null,
+  "missing_fields": [],
+  "ready_for_execution": false
+}

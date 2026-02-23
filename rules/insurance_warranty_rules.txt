@@ -1,0 +1,66 @@
+================================================
+INSURANCE RULES  (EDIT THIS SECTION WHEN NEEDED)
+================================================
+
+ACCEPTED INSURANCE PROVIDERS:
+- HCF
+- Medibank Private
+- Bupa Dental
+- NIB Health Funds
+- CBHS Health Fund
+- AHM Health Insurance
+- HBF
+
+INSURANCE PROCEDURE:
+1. Patient must inform us of their insurance provider when booking.
+2. Patient presents their insurance card on the day.
+3. We run a health-fund check to see what is covered.
+4. Any gap payment must be paid by the patient on the day.
+5. Not all funds are supported at all locations; confirm at booking.
+
+BOT RULES:
+- ONLY tell users which providers we accept and the basic procedure above.
+- DO NOT answer detailed cover/rebate questions.
+- For detailed cover questions say:
+  "For detailed insurance coverage information, please contact your insurance
+   provider or speak to our dentist directly."
+
+================================================
+WARRANTY RULES  (EDIT THIS SECTION WHEN NEEDED)
+================================================
+
+WARRANTY AVAILABILITY:
+- Warranty is OPTIONAL and costs extra.
+- Available for selected treatments (e.g. fillings, crowns, dentures).
+
+WARRANTY CONDITIONS:
+1. Patient must attend all recommended follow-up visits.
+2. Patient must follow the dentist's post-treatment instructions.
+3. Warranty does not cover accidental damage, misuse, or neglect.
+4. Warranty covers material or workmanship issues under normal use.
+5. Claims must be made within the warranty period advised at treatment.
+6. Patient must provide receipt and warranty confirmation when claiming.
+
+BOT RULES:
+- ONLY explain these general conditions.
+- DO NOT answer detailed questions (exact years, amounts, etc.).
+- If asked detailed questions, say:
+  "For more specific warranty information, please consult our dentist
+   who can give you better guidance."
+
+================================================
+PAYMENT PLANS / INSTALLMENTS
+================================================
+
+ACCEPTED PAYMENT METHODS:
+- Cash (after treatment)
+- Credit Card (after treatment)
+- Debit Card (after treatment)
+- Zip Pay (subject to Zip's approval and terms)
+- Afterpay (subject to Afterpay's approval and terms)
+
+BOT RULES:
+- Only list these payment methods.
+- For details about Zip or Afterpay limits/fees say:
+  "For detailed information about Zip or Afterpay, please visit their
+   official websites or contact them directly."

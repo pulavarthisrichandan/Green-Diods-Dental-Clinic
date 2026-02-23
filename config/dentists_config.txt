@@ -1,0 +1,11 @@
+# ============================================================
+# DENTISTS CONFIGURATION
+# Edit this file to add, remove, or update dentist information.
+# Format: Name | Specialization | Bio (short)
+# ============================================================
+
+Dr. Emily Carter | General Dentistry | Dr. Carter has over 10 years of experience in general and family dentistry, specialising in preventive care and dental check-ups.
+
+Dr. James Nguyen | Cosmetic & Restorative Dentistry | Dr. Nguyen specialises in cosmetic procedures including veneers, teeth whitening, and dental implants, with 8 years of practice.
+
+Dr. Sarah Mitchell | Orthodontics & Periodontics | Dr. Mitchell focuses on gum health, clear aligners, and orthodontic treatments, with extensive experience in periodontal care.

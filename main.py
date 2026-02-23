@@ -878,16 +878,15 @@ async def voice(request: Request):
 
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
-    print("\n" + "=" * 70)
+    print("=" * 70)
     print("[CALL START] New WebSocket connection")
     print("=" * 70)
-
     await websocket.accept()
 
-    call_sid      = None
-    stream_sid    = None
-    session       = None
-    openai_ws     = None
+    call_sid    = None
+    stream_sid  = None
+    session     = None
+    openai_ws   = None
     interrup_task = None
 
     try:
@@ -904,14 +903,10 @@ async def handle_media_stream(websocket: WebSocket):
         await websocket.close()
         return
 
-    # DO NOT send session config here — send it inside receive_from_openai
-    # after the event loop is running, so we can receive the response
-    print(f"[OpenAI] Connected | Voice: {VOICE} | Audio: g711_ulaw")
-
+    # ---- NOTE: session config is sent inside receive_from_openai ----
 
     async def receive_from_openai():
         nonlocal session, interrup_task
-
         pending_fn      = None
         pending_call_id = None
         pending_args    = ""
@@ -921,7 +916,7 @@ async def handle_media_stream(websocket: WebSocket):
             await asyncio.sleep(0.8)
             if not wd["armed"]:
                 return
-            print("[WATCHDOG] Bot silent 1.5s -- single nudge")
+            print("[WATCHDOG] Bot silent -- nudge")
             try:
                 await openai_ws.send(json.dumps({"type": "response.create"}))
             except Exception as e:
@@ -941,37 +936,46 @@ async def handle_media_stream(websocket: WebSocket):
             wd["task"]  = None
 
         try:
+            # Send session config HERE so the event loop is already running
+            await openai_ws.send(json.dumps(get_session_config()))
+            print("[OpenAI] Session config sent", flush=True)
+
             async for message in openai_ws:
                 data       = json.loads(message)
                 event_type = data.get("type", "")
+                print(f"[OpenAI EVENT] {event_type}", flush=True)
 
-                if event_type == "response.audio.delta":
+                if event_type == "session.updated":
+                    if session and not session.get("greeting_sent"):
+                        session["greeting_sent"] = True
+                        await openai_ws.send(json.dumps({
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
+                            }
+                        }))
+                        await openai_ws.send(json.dumps({"type": "response.create"}))
+
+                elif event_type == "response.audio.delta":
                     disarm_watchdog()
                     if stream_sid and "delta" in data:
                         if session:
                             session["is_speaking"] = True
-                            session["interruption_pending"] = False
-                            print("[BOT] Speaking...")
-
+                        print("[BOT] Speaking...")
                         await websocket.send_json({
                             "event":     "media",
                             "streamSid": stream_sid,
                             "media":     {"payload": data["delta"]}
                         })
 
-                        await asyncio.sleep(0.01)  # allow Twilio buffer to flush last frames
-
                 elif event_type == "response.audio.done":
                     if session:
-                        session["is_speaking"]          = False
-                        session["interruption_pending"] = False
-                        print("[BOT] Done speaking")
-                    # FIX: clear input buffer so bot echo does not trigger VAD
-                    # (was causing sentences to be spoken twice)
+                        session["is_speaking"] = False
+                    print("[BOT] Done speaking")
                     try:
-                        await openai_ws.send(json.dumps(
-                            {"type": "input_audio_buffer.clear"}
-                        ))
+                        await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))
                     except Exception:
                         pass
 
@@ -979,53 +983,28 @@ async def handle_media_stream(websocket: WebSocket):
                     if session:
                         session["current_response_id"] = data.get("response", {}).get("id")
 
-                # FIX: response.done intentionally empty.
-                # response.create was already sent in handle_function_call.
-                # Sending it again here causes a duplicate that cancels the
-                # first response, making the bot go silent after function calls.
                 elif event_type == "response.done":
                     pass
 
-                elif event_type == "conversation.item.input_audio_transcription.completed":
-                    transcript = data.get("transcript", "")
-                    if transcript and session:
-                        print(f"[USER] {transcript}")
-                        update_history(session, "user", transcript)
-
-                elif event_type == "response.audio_transcript.done":
-                    transcript = data.get("transcript", "")
-                    if transcript and session:
-                        print(f"[BOT]  {transcript}")
-                        update_history(session, "assistant", transcript)
-
                 elif event_type == "input_audio_buffer.speech_started":
                     print("[USER] Speaking detected")
-
                     if session and session.get("is_speaking"):
-                        print("[BARGE-IN] User interrupted, stopping bot immediately")
-
+                        print("[BARGE-IN] Interrupting bot")
                         await openai_ws.send(json.dumps({"type": "response.cancel"}))
-                        await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))  # 🔥 ADD THIS
-
+                        await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))
                         if stream_sid:
                             await websocket.send_json({"event": "clear", "streamSid": stream_sid})
-
                         session["is_speaking"] = False
-                        session["interruption_pending"] = False
                         session["current_response_id"] = None
 
                 elif event_type == "input_audio_buffer.speech_stopped":
                     if session:
                         session["interruption_pending"] = False
-                    if interrup_task:
-                        interrup_task.cancel()
-                        interrup_task = None
 
                 elif event_type == "response.function_call_arguments.start":
                     pending_fn      = data.get("name")
                     pending_call_id = data.get("call_id")
                     pending_args    = ""
-                    print(f"[FUNCTION] Starting: {pending_fn}")
 
                 elif event_type == "response.function_call_arguments.delta":
                     pending_args += data.get("delta", "")
@@ -1039,94 +1018,85 @@ async def handle_media_stream(websocket: WebSocket):
                     except json.JSONDecodeError:
                         args = {}
                     if fn:
-                        await handle_function_call(
-                            function_name=fn,
-                            arguments=args,
-                            call_id=cid,
-                            session=session,
-                            openai_ws=openai_ws
-                        )
+                        await handle_function_call(fn, args, cid, session, openai_ws)
                         arm_watchdog()
-                    pending_fn      = None
-                    pending_call_id = None
-                    pending_args    = ""
+                    pending_fn = pending_call_id = None
+                    pending_args = ""
 
-                elif event_type == "session.updated":
-                    if session and not session.get("greeting_sent"):
-                        session["greeting_sent"] = True
-                        await openai_ws.send(json.dumps({
-                            "type": "conversation.item.create",
-                            "item": {
-                                "type": "message",
-                                "role": "user",
-                                "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
-                            }
-                        }))
-                        await openai_ws.send(json.dumps({"type": "response.create"}))
+                elif event_type == "conversation.item.input_audio_transcription.completed":
+                    transcript = data.get("transcript", "")
+                    if transcript and session:
+                        print(f"[USER] {transcript}")
+                        update_history(session, "user", transcript)
+
+                elif event_type == "response.audio_transcript.done":
+                    transcript = data.get("transcript", "")
+                    if transcript and session:
+                        print(f"[BOT]  {transcript}")
+                        update_history(session, "assistant", transcript)
 
                 elif event_type == "error":
                     err = data.get("error", {})
-                    print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}")
+                    print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}", flush=True)
 
         except websockets.exceptions.ConnectionClosed as e:
             print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}", flush=True)
-
-
         except Exception as e:
-            print(f"[OpenAI RECEIVE ERROR] {e}")
+            print(f"[OpenAI RECEIVE ERROR] {type(e).__name__}: {e}", flush=True)
         finally:
             disarm_watchdog()
 
-        async def receive_from_twilio():
-            nonlocal call_sid, stream_sid, session
-            try:
-                async for message in websocket.iter_text():
-                    data       = json.loads(message)
-                    event_type = data.get("event", "")
-                    if event_type == "start":
-                        stream_sid = data["start"]["streamSid"]
-                        call_sid   = data["start"].get("callSid", stream_sid)
-                        session    = get_or_create_session(call_sid)
-                        session["stream_sid"] = stream_sid
-                        print(f"[Twilio] Connected | Stream: {stream_sid}")
-                    elif event_type == "media":
-                        if openai_ws and data.get("media", {}).get("payload"):
-                            await openai_ws.send(json.dumps({
-                                "type":  "input_audio_buffer.append",
-                                "audio": data["media"]["payload"]
-                            }))
-                    elif event_type == "stop":
-                        print("[Twilio] Call ended")
-                        if openai_ws:
-                            await openai_ws.close()
-                        break
-            except WebSocketDisconnect:
-                print("[Twilio] Disconnected")
-            except Exception as e:
-                print(f"[Twilio RECEIVE ERROR] {e}")
+    async def receive_from_twilio():
+        nonlocal call_sid, stream_sid, session
+        try:
+            async for message in websocket.iter_text():
+                data       = json.loads(message)
+                event_type = data.get("event", "")
+                if event_type == "start":
+                    stream_sid = data["start"]["streamSid"]
+                    call_sid   = data["start"].get("callSid", stream_sid)
+                    session    = get_or_create_session(call_sid)
+                    session["stream_sid"] = stream_sid
+                    print(f"[Twilio] Connected | Stream: {stream_sid}")
+                elif event_type == "media":
+                    if openai_ws and data.get("media", {}).get("payload"):
+                        await openai_ws.send(json.dumps({
+                            "type":  "input_audio_buffer.append",
+                            "audio": data["media"]["payload"]
+                        }))
+                elif event_type == "stop":
+                    print("[Twilio] Call ended")
+                    if openai_ws:
+                        await openai_ws.close()
+                    break
+        except WebSocketDisconnect:
+            print("[Twilio] Disconnected")
+        except Exception as e:
+            print(f"[Twilio RECEIVE ERROR] {e}")
 
+    await asyncio.gather(receive_from_twilio(), receive_from_openai())
+
+    try:
         await asyncio.gather(receive_from_twilio(), receive_from_openai())
 
-        try:
-            await asyncio.gather(receive_from_twilio(), receive_from_openai())
+    except Exception as e:
+        print(f"[HANDLER ERROR] {e}")
+        import traceback
+        traceback.print_exc()
 
-        except Exception as e:
-            print(f"[HANDLER ERROR] {e}")
-            import traceback
-            traceback.print_exc()
+    finally:
+        print("[CALL END] Cleaning up...")
+        if call_sid and call_sid in call_sessions:
+            del call_sessions[call_sid]
+        if openai_ws:
+            try:
+                await openai_ws.close()
+            except Exception:
+                pass
+        if interrup_task:
+            interrup_task.cancel()
+        print("[CALL END] Done\n")
 
-        finally:
-            print("[CALL END] Cleaning up...")
-            if call_sid and call_sid in call_sessions:
-                del call_sessions[call_sid]
-            if openai_ws:
-                try:
-                    await openai_ws.close()
-                except Exception:
-                    pass
-            if interrup_task:
-                interrup_task.cancel()
-            print("[CALL END] Done\n")
 
 @app.get("/health")
 def health():

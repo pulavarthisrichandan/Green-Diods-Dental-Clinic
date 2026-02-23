@@ -904,238 +904,178 @@ async def handle_media_stream(websocket: WebSocket):
         await websocket.close()
         return
 
-    print("[OpenAI] Sending session config...", flush=True)
-    try:
-        await openai_ws.send(json.dumps(get_session_config()))
-        print(f"[OpenAI] Session config sent OK | Voice: {VOICE}", flush=True)
-    except Exception as e:
-        print(f"[OpenAI] FAILED to send session config: {type(e).__name__}: {e}", flush=True)
-        await websocket.close()
-        return
+    # DO NOT send session config here — send it inside receive_from_openai
+    # after the event loop is running, so we can receive the response
+    print(f"[OpenAI] Connected | Voice: {VOICE} | Audio: g711_ulaw")
 
 
-        # async def confirm_interruption():
-        #     nonlocal interrup_task
-        #     try:
-        #         await asyncio.sleep(INTERRUPTION_CONFIRMATION_MS / 1000.0)
+    async def receive_from_openai():
+        nonlocal session, interrup_task
 
-        #         if session and session.get("is_speaking") and session.get("interruption_pending"):
-        #             print("[INTERRUPT] Stopping bot")
+        pending_fn      = None
+        pending_call_id = None
+        pending_args    = ""
+        wd = {"task": None, "armed": False}
 
-        #             # Let last audio frames flush
-        #             await asyncio.sleep(0.15)
-
-        #             await openai_ws.send(json.dumps({"type": "response.cancel"}))
-
-        #             if stream_sid:
-        #                 await websocket.send_json({"event": "clear", "streamSid": stream_sid})
-
-        #             session["is_speaking"] = False
-        #             session["interruption_pending"] = False
-
-        #     except asyncio.CancelledError:
-        #         pass
-        #     except asyncio.CancelledError:
-        #         pass
-        #     except Exception as e:
-        #         print(f"[INTERRUPT ERROR] {e}")
-
-        async def receive_from_openai():
-            nonlocal session, interrup_task
-
-            pending_fn      = None
-            pending_call_id = None
-            pending_args    = ""
-            wd = {"task": None, "armed": False}
-
-            async def watchdog():
-                await asyncio.sleep(0.8)
-                if not wd["armed"]:
-                    return
-                print("[WATCHDOG] Bot silent 1.5s -- single nudge")
-                try:
-                    await openai_ws.send(json.dumps({"type": "response.create"}))
-                except Exception as e:
-                    print(f"[WATCHDOG ERROR] {e}")
-                wd["armed"] = False
-
-            def arm_watchdog():
-                if wd["task"] and not wd["task"].done():
-                    wd["task"].cancel()
-                wd["armed"] = True
-                wd["task"]  = asyncio.create_task(watchdog())
-
-            def disarm_watchdog():
-                if wd["task"] and not wd["task"].done():
-                    wd["task"].cancel()
-                wd["armed"] = False
-                wd["task"]  = None
-
+        async def watchdog():
+            await asyncio.sleep(0.8)
+            if not wd["armed"]:
+                return
+            print("[WATCHDOG] Bot silent 1.5s -- single nudge")
             try:
-                async for message in openai_ws:
-                    data       = json.loads(message)
-                    event_type = data.get("type", "")
+                await openai_ws.send(json.dumps({"type": "response.create"}))
+            except Exception as e:
+                print(f"[WATCHDOG ERROR] {e}")
+            wd["armed"] = False
 
-                    if event_type == "response.audio.delta":
-                        disarm_watchdog()
-                        if stream_sid and "delta" in data:
-                            if session:
-                                session["is_speaking"] = True
-                                session["interruption_pending"] = False
-                                print("[BOT] Speaking...")
+        def arm_watchdog():
+            if wd["task"] and not wd["task"].done():
+                wd["task"].cancel()
+            wd["armed"] = True
+            wd["task"]  = asyncio.create_task(watchdog())
 
-                            await websocket.send_json({
-                                "event":     "media",
-                                "streamSid": stream_sid,
-                                "media":     {"payload": data["delta"]}
-                            })
+        def disarm_watchdog():
+            if wd["task"] and not wd["task"].done():
+                wd["task"].cancel()
+            wd["armed"] = False
+            wd["task"]  = None
 
-                            await asyncio.sleep(0.01)  # allow Twilio buffer to flush last frames
+        try:
+            async for message in openai_ws:
+                data       = json.loads(message)
+                event_type = data.get("type", "")
 
-                    elif event_type == "response.audio.done":
+                if event_type == "response.audio.delta":
+                    disarm_watchdog()
+                    if stream_sid and "delta" in data:
                         if session:
-                            session["is_speaking"]          = False
+                            session["is_speaking"] = True
                             session["interruption_pending"] = False
-                            print("[BOT] Done speaking")
-                        # FIX: clear input buffer so bot echo does not trigger VAD
-                        # (was causing sentences to be spoken twice)
-                        try:
-                            await openai_ws.send(json.dumps(
-                                {"type": "input_audio_buffer.clear"}
-                            ))
-                        except Exception:
-                            pass
+                            print("[BOT] Speaking...")
 
-                    elif event_type == "response.created":
-                        if session:
-                            session["current_response_id"] = data.get("response", {}).get("id")
+                        await websocket.send_json({
+                            "event":     "media",
+                            "streamSid": stream_sid,
+                            "media":     {"payload": data["delta"]}
+                        })
 
-                    # FIX: response.done intentionally empty.
-                    # response.create was already sent in handle_function_call.
-                    # Sending it again here causes a duplicate that cancels the
-                    # first response, making the bot go silent after function calls.
-                    elif event_type == "response.done":
+                        await asyncio.sleep(0.01)  # allow Twilio buffer to flush last frames
+
+                elif event_type == "response.audio.done":
+                    if session:
+                        session["is_speaking"]          = False
+                        session["interruption_pending"] = False
+                        print("[BOT] Done speaking")
+                    # FIX: clear input buffer so bot echo does not trigger VAD
+                    # (was causing sentences to be spoken twice)
+                    try:
+                        await openai_ws.send(json.dumps(
+                            {"type": "input_audio_buffer.clear"}
+                        ))
+                    except Exception:
                         pass
 
-                    elif event_type == "conversation.item.input_audio_transcription.completed":
-                        transcript = data.get("transcript", "")
-                        if transcript and session:
-                            print(f"[USER] {transcript}")
-                            update_history(session, "user", transcript)
+                elif event_type == "response.created":
+                    if session:
+                        session["current_response_id"] = data.get("response", {}).get("id")
 
-                    elif event_type == "response.audio_transcript.done":
-                        transcript = data.get("transcript", "")
-                        if transcript and session:
-                            print(f"[BOT]  {transcript}")
-                            update_history(session, "assistant", transcript)
+                # FIX: response.done intentionally empty.
+                # response.create was already sent in handle_function_call.
+                # Sending it again here causes a duplicate that cancels the
+                # first response, making the bot go silent after function calls.
+                elif event_type == "response.done":
+                    pass
 
-                    # elif event_type == "input_audio_buffer.speech_started":
-                    #     print("[USER] Speaking detected")
+                elif event_type == "conversation.item.input_audio_transcription.completed":
+                    transcript = data.get("transcript", "")
+                    if transcript and session:
+                        print(f"[USER] {transcript}")
+                        update_history(session, "user", transcript)
 
-                    #     if session and session.get("is_speaking"):
-                    #         print("[BARGE-IN] User interrupted, stopping bot immediately")
+                elif event_type == "response.audio_transcript.done":
+                    transcript = data.get("transcript", "")
+                    if transcript and session:
+                        print(f"[BOT]  {transcript}")
+                        update_history(session, "assistant", transcript)
 
-                    #         # 1. Stop OpenAI audio generation immediately
-                    #         try:
-                    #             await openai_ws.send(json.dumps({"type": "response.cancel"}))
-                    #         except Exception as e:
-                    #             print(f"[BARGE-IN ERROR] Cancel response failed: {e}")
+                elif event_type == "input_audio_buffer.speech_started":
+                    print("[USER] Speaking detected")
 
-                    #         # 2. Flush Twilio audio buffer immediately (caller hears silence)
-                    #         if stream_sid:
-                    #             try:
-                    #                 await websocket.send_json({"event": "clear", "streamSid": stream_sid})
-                    #             except Exception as e:
-                    #                 print(f"[BARGE-IN ERROR] Twilio clear failed: {e}")
+                    if session and session.get("is_speaking"):
+                        print("[BARGE-IN] User interrupted, stopping bot immediately")
 
-                    #         # 3. Reset speaking state
-                    #         session["is_speaking"] = False
-                    #         session["interruption_pending"] = False
+                        await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                        await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))  # 🔥 ADD THIS
 
-                    #         # 4. Cancel any pending interruption timers
-                    #         if interrup_task:
-                    #             interrup_task.cancel()
-                    #             interrup_task = None
+                        if stream_sid:
+                            await websocket.send_json({"event": "clear", "streamSid": stream_sid})
 
+                        session["is_speaking"] = False
+                        session["interruption_pending"] = False
+                        session["current_response_id"] = None
 
-                    elif event_type == "input_audio_buffer.speech_started":
-                        print("[USER] Speaking detected")
+                elif event_type == "input_audio_buffer.speech_stopped":
+                    if session:
+                        session["interruption_pending"] = False
+                    if interrup_task:
+                        interrup_task.cancel()
+                        interrup_task = None
 
-                        if session and session.get("is_speaking"):
-                            print("[BARGE-IN] User interrupted, stopping bot immediately")
+                elif event_type == "response.function_call_arguments.start":
+                    pending_fn      = data.get("name")
+                    pending_call_id = data.get("call_id")
+                    pending_args    = ""
+                    print(f"[FUNCTION] Starting: {pending_fn}")
 
-                            await openai_ws.send(json.dumps({"type": "response.cancel"}))
-                            await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))  # 🔥 ADD THIS
+                elif event_type == "response.function_call_arguments.delta":
+                    pending_args += data.get("delta", "")
 
-                            if stream_sid:
-                                await websocket.send_json({"event": "clear", "streamSid": stream_sid})
+                elif event_type == "response.function_call_arguments.done":
+                    fn  = data.get("name")      or pending_fn
+                    cid = data.get("call_id")   or pending_call_id
+                    raw = data.get("arguments") or pending_args
+                    try:
+                        args = json.loads(raw or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    if fn:
+                        await handle_function_call(
+                            function_name=fn,
+                            arguments=args,
+                            call_id=cid,
+                            session=session,
+                            openai_ws=openai_ws
+                        )
+                        arm_watchdog()
+                    pending_fn      = None
+                    pending_call_id = None
+                    pending_args    = ""
 
-                            session["is_speaking"] = False
-                            session["interruption_pending"] = False
-                            session["current_response_id"] = None
+                elif event_type == "session.updated":
+                    if session and not session.get("greeting_sent"):
+                        session["greeting_sent"] = True
+                        await openai_ws.send(json.dumps({
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
+                            }
+                        }))
+                        await openai_ws.send(json.dumps({"type": "response.create"}))
 
-                    elif event_type == "input_audio_buffer.speech_stopped":
-                        if session:
-                            session["interruption_pending"] = False
-                        if interrup_task:
-                            interrup_task.cancel()
-                            interrup_task = None
+                elif event_type == "error":
+                    err = data.get("error", {})
+                    print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}")
 
-                    elif event_type == "response.function_call_arguments.start":
-                        pending_fn      = data.get("name")
-                        pending_call_id = data.get("call_id")
-                        pending_args    = ""
-                        print(f"[FUNCTION] Starting: {pending_fn}")
-
-                    elif event_type == "response.function_call_arguments.delta":
-                        pending_args += data.get("delta", "")
-
-                    elif event_type == "response.function_call_arguments.done":
-                        fn  = data.get("name")      or pending_fn
-                        cid = data.get("call_id")   or pending_call_id
-                        raw = data.get("arguments") or pending_args
-                        try:
-                            args = json.loads(raw or "{}")
-                        except json.JSONDecodeError:
-                            args = {}
-                        if fn:
-                            await handle_function_call(
-                                function_name=fn,
-                                arguments=args,
-                                call_id=cid,
-                                session=session,
-                                openai_ws=openai_ws
-                            )
-                            arm_watchdog()
-                        pending_fn      = None
-                        pending_call_id = None
-                        pending_args    = ""
-
-                    elif event_type == "session.updated":
-                        if session and not session.get("greeting_sent"):
-                            session["greeting_sent"] = True
-                            await openai_ws.send(json.dumps({
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "message",
-                                    "role": "user",
-                                    "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
-                                }
-                            }))
-                            await openai_ws.send(json.dumps({"type": "response.create"}))
-
-                    elif event_type == "error":
-                        err = data.get("error", {})
-                        print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}")
-
-            except websockets.exceptions.ConnectionClosed as e:
-                print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}", flush=True)
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}", flush=True)
 
 
-            except Exception as e:
-                print(f"[OpenAI RECEIVE ERROR] {e}")
-            finally:
-                disarm_watchdog()
+        except Exception as e:
+            print(f"[OpenAI RECEIVE ERROR] {e}")
+        finally:
+            disarm_watchdog()
 
         async def receive_from_twilio():
             nonlocal call_sid, stream_sid, session
@@ -1167,22 +1107,26 @@ async def handle_media_stream(websocket: WebSocket):
 
         await asyncio.gather(receive_from_twilio(), receive_from_openai())
 
-    except Exception as e:
-        print(f"[HANDLER ERROR] {e}")
-        import traceback; traceback.print_exc()
+        try:
+            await asyncio.gather(receive_from_twilio(), receive_from_openai())
 
-    finally:
-        print("[CALL END] Cleaning up...")
-        if call_sid and call_sid in call_sessions:
-            del call_sessions[call_sid]
-        if openai_ws:
-            try:
-                await openai_ws.close()
-            except Exception:
-                pass
-        if interrup_task:
-            interrup_task.cancel()
-        print("[CALL END] Done\n")
+        except Exception as e:
+            print(f"[HANDLER ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+
+        finally:
+            print("[CALL END] Cleaning up...")
+            if call_sid and call_sid in call_sessions:
+                del call_sessions[call_sid]
+            if openai_ws:
+                try:
+                    await openai_ws.close()
+                except Exception:
+                    pass
+            if interrup_task:
+                interrup_task.cancel()
+            print("[CALL END] Done\n")
 
 @app.get("/health")
 def health():

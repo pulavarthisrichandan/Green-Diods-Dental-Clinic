@@ -904,8 +904,15 @@ async def handle_media_stream(websocket: WebSocket):
         await websocket.close()
         return
 
+    print("[OpenAI] Sending session config...", flush=True)
+    try:
         await openai_ws.send(json.dumps(get_session_config()))
-        print(f"[OpenAI] Connected | Voice: {VOICE} | Audio: g711_ulaw")
+        print(f"[OpenAI] Session config sent OK | Voice: {VOICE}", flush=True)
+    except Exception as e:
+        print(f"[OpenAI] FAILED to send session config: {type(e).__name__}: {e}", flush=True)
+        await websocket.close()
+        return
+
 
         # async def confirm_interruption():
         #     nonlocal interrup_task
@@ -1122,7 +1129,8 @@ async def handle_media_stream(websocket: WebSocket):
                         print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}")
 
             except websockets.exceptions.ConnectionClosed as e:
-                print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}")
+                print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}", flush=True)
+
 
             except Exception as e:
                 print(f"[OpenAI RECEIVE ERROR] {e}")

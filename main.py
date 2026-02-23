@@ -1074,7 +1074,6 @@ async def handle_media_stream(websocket: WebSocket):
         except Exception as e:
             print(f"[Twilio RECEIVE ERROR] {e}")
 
-    await asyncio.gather(receive_from_twilio(), receive_from_openai())
 
     try:
         await asyncio.gather(receive_from_twilio(), receive_from_openai())

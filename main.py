@@ -856,7 +856,7 @@ def get_session_config() -> dict:
 
 from fastapi.responses import Response
 
-CLOUD_RUN_WSS_BASE = "wss://ai-bot-demo-142299062461.australia-southeast1.run.app"
+CLOUD_RUN_WSS_BASE = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 @app.api_route("/voice", methods=["GET", "POST"])
 async def voice(request: Request):

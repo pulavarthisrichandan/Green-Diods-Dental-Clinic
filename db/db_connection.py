@@ -121,7 +121,7 @@ def db_cursor():
     try:
         conn = psycopg2.connect(
             DATABASE_URL,
-            sslmode="require",
+            sslmode="prefer",
             connect_timeout=10
         )
         cursor = conn.cursor()

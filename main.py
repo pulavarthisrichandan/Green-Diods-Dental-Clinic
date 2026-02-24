@@ -62,9 +62,9 @@ OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-pr
 
 VOICE                        = "sage"
 TEMPERATURE                  = 0.7
-VAD_THRESHOLD                = 0.75
+VAD_THRESHOLD                = 0.5
 PREFIX_PADDING_MS            = 300
-SILENCE_DURATION_MS          = 900
+SILENCE_DURATION_MS          = 600
 INTERRUPTION_CONFIRMATION_MS = 700
 
 call_sessions: dict = {}
@@ -226,6 +226,11 @@ SYSTEM_INSTRUCTIONS = (
     # MID-FLOW AND ENDING
     "MID-FLOW: unrelated question -> answer -> ask shall we continue -> YES resume\n\n"
     "ENDING: Thank you for calling Green Diode's Dental Clinic. Have a wonderful day!"
+
+    "After asking ANY question, you MUST stop speaking completely and wait silently for the user to respond. \n"
+    "Never ask a follow-up question until the user has answered the current one. \n"
+    "Never assume or acknowledge information the user has not yet provided."
+
 )
 
 
@@ -877,6 +882,13 @@ async def voice(request: Request):
     return Response(content=twiml, media_type="application/xml")
 
 
+# Declare these at the start of your WebSocket handler
+last_assistant_item_id = None   # tracks which bot response is playing
+audio_start_time = None         # tracks when bot audio started
+elapsed_ms = 0                  # how many ms of audio has played
+audio_queue = []                # holds outgoing audio chunks
+
+
 
 # ---------------------------------------------------------------------------
 # MAIN WEBSOCKET
@@ -993,15 +1005,27 @@ async def handle_media_stream(websocket: WebSocket):
                     pass
 
                 elif event_type == "input_audio_buffer.speech_started":
-                    print("[USER] Speaking detected")
-                    if session and session.get("is_speaking"):
-                        print("[BARGE-IN] Interrupting bot")
-                        await openai_ws.send(json.dumps({"type": "response.cancel"}))
-                        await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))
-                        if stream_sid:
-                            await websocket.send_json({"event": "clear", "streamSid": stream_sid})
-                        session["is_speaking"] = False
-                        session["current_response_id"] = None
+                    print("[BARGE-IN] User interrupted bot — stopping bot audio")
+
+                    # Step 1: Cancel the active OpenAI response
+                    await openai_ws.send(json.dumps({
+                        "type": "response.cancel"
+                    }))
+
+                    # Step 2: Truncate the audio at the exact moment of interruption
+                    if last_assistant_item_id:
+                        await openai_ws.send(json.dumps({
+                            "type": "conversation.item.truncate",
+                            "item_id": last_assistant_item_id,
+                            "content_index": 0,
+                            "audio_end_ms": elapsed_ms  # track this from your audio timestamps
+                        }))
+
+                    # Step 3: Clear your audio output buffer 
+                    # (if using Twilio, send a clear event to Twilio stream)
+                    # (if using direct WebSocket audio, flush your audio queue here)
+                    audio_queue.clear()  # or however your audio buffer is managed
+
 
                 elif event_type == "input_audio_buffer.speech_stopped":
                     if session:

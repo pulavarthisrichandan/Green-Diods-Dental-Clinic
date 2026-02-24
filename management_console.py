@@ -215,7 +215,7 @@ BASE_HTML = """
 
 {% if show_nav %}
 <nav class="nav">
-    <div class="nav-brand">🦷 Primary Dental — Management Portal</div>
+    <div class="nav-brand">🦷 Green Dioed's Dental — Management Portal</div>
     <ul class="nav-links">
         <li><a href="/dashboard"      {% if active=='dashboard'      %}class="active"{% endif %}>Dashboard</a></li>
         <li><a href="/appointments"   {% if active=='appointments'   %}class="active"{% endif %}>Appointments</a></li>
@@ -278,7 +278,7 @@ def login():
     <div class="login-wrap">
         <div class="login-card">
             <h1>🦷 DentalBot Portal</h1>
-            <p>Primary Dental Clinic — Staff Login</p>
+            <p>Green Diode's Dental Clinic — Staff Login</p>
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% for category, message in messages %}
                     <div class="alert alert-{{ category }}">{{ message }}</div>

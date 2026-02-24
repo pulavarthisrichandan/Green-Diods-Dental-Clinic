@@ -140,6 +140,8 @@ SYSTEM_INSTRUCTIONS = (
 
     # VERIFICATION
     "VERIFICATION:\n\n"
+    "Starting of the cal - Only ask Are you an existing patient or a new patient?, when the user's intent is to BOOK, UPDATE, or CANCEL an appointment. \n"
+    "Do NOT ask Are you an existing patient or a new patient? for general questions about address, hours, pricing, services, insurance, or any non-appointment enquiry. Answer those directly. \n"
 
     "STEP 0 -- MANDATORY FIRST QUESTION (with one exception):\\n"
     " Before collecting ANY details, ALWAYS ask:\\n"
@@ -195,6 +197,12 @@ SYSTEM_INSTRUCTIONS = (
     "5. After booking -> say date, time, dentist only\n"
     "6. NEVER say schedule a consultation\n"
     "7. Phone readback ALWAYS digit by digit: 0,4,6,2... is that correct?\n\n"
+
+    # CLINIC DETAILS
+    "CLINIC DETAILS — Always answer these from memory, no function call needed:\n"
+    "- Address: 123, Building, Melbourne Central, Melbourne, Victoria \n"
+    "- Phone: 03 6160 3456 \n"
+    "- Hours: Monday to Friday 9:00 AM – 6:00 PM, Saturday and Sunday CLOSED \n"
 
     # DENTISTS
     "DENTISTS:\n"
@@ -263,6 +271,27 @@ def update_history(session: dict, role: str, content: str):
         "content":   content,
         "timestamp": datetime.now().isoformat()
     })
+
+def get_business_information():
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+    # Load business rules
+    business_path = os.path.join(base_path, "business_rules.txt")
+    with open(business_path, "r") as f:
+        business_rules = f.read()
+
+    # Load clinic info (address, hours, contact)
+    clinic_path = os.path.join(base_path, "clinic_info.txt")
+    with open(clinic_path, "r") as f:
+        clinic_info = f.read()
+
+    print(f"[DEBUG] clinic_info loaded: {clinic_info[:100]}")  # verify in Railway logs
+
+    return {
+        "status": "SUCCESS",
+        "clinic_info": clinic_info,
+        "business_rules": business_rules
+    }
 
 
 # ---------------------------------------------------------------------------

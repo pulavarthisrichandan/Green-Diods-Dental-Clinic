@@ -1,5 +1,5 @@
 # ============================================================
-# BUSINESS RULES — Primary Dental Clinic
+# BUSINESS RULES — Green Diode's Dental Clinic
 # SOURCE: primarydental.com.au (manually extracted)
 # Last Updated: February 2026
 # ============================================================
@@ -7,7 +7,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CLINIC INFO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Name    : Primary Dental Clinic
+Name    : Green Diode's Dental Clinic
 Website : primarydental.com.au
 Phone   : 1300 978 214
 

@@ -4,7 +4,7 @@
 # ============================================================
 
 [CLINIC NAME]
-Primary Dental Clinic
+Green Diode Dental Clinic
 
 [HOURS]
 Monday    : 9:00 AM – 6:00 PM
@@ -17,11 +17,13 @@ Sunday    : CLOSED
 Public Holidays : CLOSED
 
 [CONTACT]
-Phone : (03) XXXX XXXX
-Email : info@primarydentalclinic.com.au
+Phone : (03) 6160 3456
+Email : info@GreenDiode.com.au
 
 [LOCATION]
-Address : [Your Clinic Address], Melbourne, VIC, Australia
+Address:  123 Building, Melbourne Central, Melbourne, Victoria
+Google Maps  Search "Green Diode's Dental Clinic Melbourne Central" on Google Maps for directions
+
 
 [EMERGENCY]
 For dental emergencies during business hours, please call us directly.

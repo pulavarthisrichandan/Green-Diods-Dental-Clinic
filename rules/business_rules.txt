@@ -24,4 +24,8 @@ IMPORTANT:
 
 TONE: Polite, professional, calm.
 
-Dental Address - 123, building, Melbourne Central, Melbourne, Victoria.
+CLINIC INFO
+Name     Green Diode Dental Clinic
+Address  123 Building, Melbourne Central, Melbourne, Victoria
+Website  greendiode.com.au
+Phone    03 6160 3456

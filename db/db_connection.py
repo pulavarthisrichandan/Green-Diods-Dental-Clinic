@@ -33,16 +33,15 @@ _pool = None
 def get_pool():
     global _pool
     if _pool is None:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            raise RuntimeError("DATABASE_URL is not set in environment variables")
         _pool = psycopg2.pool.SimpleConnectionPool(
-        1, 10,
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        sslmode=os.getenv("DB_SSLMODE", "require"),
-        connect_timeout=5,
-    )
+            1, 10,
+            dsn=db_url,
+            sslmode="require",
+            connect_timeout=5,
+        )
     return _pool
 
 

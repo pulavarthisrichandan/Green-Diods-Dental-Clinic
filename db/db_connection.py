@@ -32,67 +32,103 @@ import psycopg2.pool
 import threading
 from contextlib import contextmanager
 
-_pool = None
-_pool_lock = threading.Lock()
+# _pool = None
+# _pool_lock = threading.Lock()
 
-def get_pool():
-    global _pool
-    if _pool is None:
-        with _pool_lock:
-            if _pool is None:
-                db_url = os.getenv("DATABASE_URL")
-                if not db_url:
-                    raise RuntimeError("DATABASE_URL is not set in environment variables")
+# def get_pool():
+#     global _pool
+#     if _pool is None:
+#         with _pool_lock:
+#             if _pool is None:
+#                 db_url = os.getenv("DATABASE_URL")
+#                 if not db_url:
+#                     raise RuntimeError("DATABASE_URL is not set in environment variables")
 
-                test_conn = psycopg2.connect(
-                    db_url,
-                    sslmode="require",
-                    connect_timeout=10
-                )
-                test_conn.close()
+#                 test_conn = psycopg2.connect(
+#                     db_url,
+#                     sslmode="require",
+#                     connect_timeout=10
+#                 )
+#                 test_conn.close()
 
-                _pool = psycopg2.pool.SimpleConnectionPool(
-                    1, 10,
-                    dsn=db_url,
-                    sslmode="require",
-                    connect_timeout=10,
-                )
-    return _pool
+#                 _pool = psycopg2.pool.SimpleConnectionPool(
+#                     1, 10,
+#                     dsn=db_url,
+#                     sslmode="require",
+#                     connect_timeout=10,
+#                 )
+#     return _pool
 
-class PooledConnection:
-    def __init__(self, conn, pool):
-        self._conn = conn
-        self._pool = pool
+# class PooledConnection:
+#     def __init__(self, conn, pool):
+#         self._conn = conn
+#         self._pool = pool
 
-    def close(self):
-        self._pool.putconn(self._conn)
+#     def close(self):
+#         self._pool.putconn(self._conn)
 
-    def cursor(self):
-        return self._conn.cursor()
+#     def cursor(self):
+#         return self._conn.cursor()
 
-    def commit(self):
-        return self._conn.commit()
+#     def commit(self):
+#         return self._conn.commit()
 
-    def rollback(self):
-        return self._conn.rollback()
+#     def rollback(self):
+#         return self._conn.rollback()
 
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
+#     def __getattr__(self, name):
+#         return getattr(self._conn, name)
 
-def get_db_connection():
-    pool = get_pool()
-    conn = pool.getconn()
-    return PooledConnection(conn, pool)
+# def get_db_connection():
+#     pool = get_pool()
+#     conn = pool.getconn()
+#     return PooledConnection(conn, pool)
+
+# @contextmanager
+# def db_cursor():
+#     conn = None
+#     cursor = None
+#     try:
+#         conn = get_db_connection()
+#         cursor = conn.cursor()
+#         yield cursor, conn
+#         conn.commit()
+#     finally:
+#         if cursor:
+#             cursor.close()
+#         if conn:
+#             conn.close()
+
+# db/db_connection.py
+
+# db/db_connection.py
+
+import psycopg2
+from contextlib import contextmanager
+
+# 🔴 Paste the SAME working DATABASE_URL you used in db_test.py
+DATABASE_URL = "postgresql://postgres:ChandanK%401231@db.krledcpdypdkzqweawqp.supabase.co:5432/postgres"
+
 
 @contextmanager
 def db_cursor():
     conn = None
     cursor = None
     try:
-        conn = get_db_connection()
+        conn = psycopg2.connect(
+            DATABASE_URL,
+            sslmode="require",
+            connect_timeout=10
+        )
         cursor = conn.cursor()
         yield cursor, conn
         conn.commit()
+    except Exception as e:
+        # Print full error for visibility
+        print("❌ DB ERROR:", type(e).__name__, e)
+        if conn:
+            conn.rollback()
+        raise
     finally:
         if cursor:
             cursor.close()

@@ -4,7 +4,7 @@ Handles all DB operations for patient verification and account creation.
 No patient_id is ever returned to the caller for display.
 """
 
-from db.db_connection import get_db_connection, db_cursor
+from db.db_connection import db_cursor
 from utils.phone_utils import normalize_phone
 from utils.text_utils import title_case
 from utils.date_time_utils import dob_to_db_format

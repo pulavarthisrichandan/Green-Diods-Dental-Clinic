@@ -8,7 +8,7 @@ complaint_id is INTERNAL — never returned to or spoken to the patient.
 Patient details always come from the verified session.
 """
 
-from db.db_connection import get_db_connection, db_cursor
+from db.db_connection import db_cursor
 from utils.text_utils import title_case
 from utils.phone_utils import normalize_phone, format_phone_for_speech
 

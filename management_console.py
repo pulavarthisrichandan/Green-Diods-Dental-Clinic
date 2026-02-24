@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from datetime import date, datetime
 from functools import wraps
 
-from db.db_connection import get_db_connection, db_cursor
+from db.db_connection import db_cursor
 from utils.text_utils import title_case
 from utils.phone_utils import normalize_phone, format_phone_for_speech
 
@@ -325,7 +325,7 @@ def index():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
     today  = date.today().strftime("%Y-%m-%d")
 
@@ -534,7 +534,7 @@ def appointments():
     status_f  = request.args.get("status", "").strip()
     date_f    = request.args.get("date", "").strip()
 
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     query = """
@@ -660,7 +660,7 @@ def update_appointment_status():
         return redirect(url_for("appointments"))
 
     try:
-        conn   = get_db_connection()
+        conn   = db_cursor()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE appointments
@@ -686,7 +686,7 @@ def update_appointment_status():
 def patients():
     search = request.args.get("search", "").strip()
 
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     if search:
@@ -910,7 +910,7 @@ def complaints():
     category_f = request.args.get("category", "").strip()
     search     = request.args.get("search",   "").strip()
 
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     query  = """
@@ -1024,7 +1024,7 @@ def update_complaint_status():
         return redirect(url_for("complaints"))
 
     try:
-        conn   = get_db_connection()
+        conn   = db_cursor()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE complaints SET status = %s
@@ -1050,7 +1050,7 @@ def orders():
     status_f = request.args.get("status", "").strip()
     search   = request.args.get("search", "").strip()
 
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     query = """
@@ -1157,7 +1157,7 @@ def update_order_status():
         return redirect(url_for("orders"))
 
     try:
-        conn   = get_db_connection()
+        conn   = db_cursor()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE patient_orders
@@ -1184,7 +1184,7 @@ def business_logs():
     search   = request.args.get("search",  "").strip()
     purpose_f = request.args.get("purpose", "").strip()
 
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     query  = """

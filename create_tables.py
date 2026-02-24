@@ -147,14 +147,14 @@ Usage:
     python reset_db.py
 """
 
-from db.db_connection import get_db_connection
+from db.db_connection import db_cursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
 def reset():
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     print("=" * 60)

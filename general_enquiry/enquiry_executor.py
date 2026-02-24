@@ -10,7 +10,7 @@ All lookups use patient_id from the verified session.
 order_id, appointment_id are INTERNAL — never shown to patient.
 """
 
-from db.db_connection import get_db_connection, db_cursor
+from db.db_connection import db_cursor
 from utils.date_time_utils import parse_date, parse_time, format_date_for_speech, format_time_for_speech
 from utils.text_utils import title_case
 from datetime import date

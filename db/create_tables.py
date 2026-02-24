@@ -12,7 +12,7 @@ load_dotenv()
 import os
 import psycopg2
 
-def get_db_connection():
+def db_cursor():
     database_url = os.getenv("DATABASE_URL")
 
     if not database_url:
@@ -25,7 +25,7 @@ def get_db_connection():
     )
 
 def create_tables():
-    conn   = get_db_connection()
+    conn   = db_cursor()
     cursor = conn.cursor()
 
     # ── Drop in reverse dependency order ──────────────────────────

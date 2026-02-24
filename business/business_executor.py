@@ -6,7 +6,7 @@ DB operations for:
     - Updating patient order status          → patient_orders table
 """
 
-from db.db_connection import get_db_connection, db_cursor
+from db.db_connection import db_cursor
 from utils.phone_utils import normalize_phone
 from utils.text_utils import title_case
 

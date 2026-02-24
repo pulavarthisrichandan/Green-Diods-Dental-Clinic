@@ -5,7 +5,7 @@ All appointment DB operations matching the new schema.
 
 import re
 from datetime import datetime, date, timedelta
-from db.db_connection import get_db_connection, db_cursor
+from db.db_connection import db_cursor
 
 
 # ─────────────────────────────────────────────────────────────

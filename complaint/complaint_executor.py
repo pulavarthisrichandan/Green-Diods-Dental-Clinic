@@ -17,15 +17,12 @@ from utils.phone_utils import normalize_phone, format_phone_for_speech
 # SAVE COMPLAINT
 # ─────────────────────────────────────────────────────────────────────────────
 
-def save_complaint(
-    patient_name:       str,
-    contact_number:     str,
-    complaint_text:     str,
-    complaint_category: str,          # 'general' or 'treatment'
-    treatment_name:     str = None,   # treatment complaints only
-    dentist_name:       str = None,   # treatment complaints only (optional)
-    treatment_date:     str = None    # treatment complaints only (optional, DD-MM-YYYY)
-) -> dict:
+from db.db_connection import db_cursor
+
+def save_complaint(patient_name, contact_number, complaint_text,
+                   complaint_category="general",
+                   treatment_name=None, dentist_name=None, treatment_date=None):
+    
     """
     Save a patient complaint to the DB.
 
@@ -36,64 +33,21 @@ def save_complaint(
         status = SAVED   → success (complaint_id internal only)
         status = ERROR   → DB error
     """
-    if not all([patient_name, contact_number, complaint_text, complaint_category]):
-        return {
-            "status":  "MISSING_INFO",
-            "message": "Patient name, contact, complaint text, and category are required."
-        }
 
-    category = complaint_category.lower()
-    if category not in ("general", "treatment"):
-        category = "general"
-
-    try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
-
+    with db_cursor() as (cursor, conn):
         cursor.execute("""
-            INSERT INTO complaints (
-                complaint_category,
-                patient_name,
-                contact_number,
-                complaint_text,
-                treatment_name,
-                dentist_name,
-                treatment_date,
-                status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
-            RETURNING complaint_id
+            INSERT INTO complaints
+            (patient_name, contact_number, complaint_text,
+             complaint_category, treatment_name, dentist_name, treatment_date)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
-            category,
-            title_case(patient_name),
-            normalize_phone(contact_number),
-            complaint_text.strip(),
-            treatment_name,
-            dentist_name,
-            treatment_date
+            patient_name, contact_number, complaint_text,
+            complaint_category, treatment_name, dentist_name, treatment_date
         ))
 
-        # complaint_id → stored internally, never returned to caller
-        _ = cursor.fetchone()[0]
-        conn.commit()
-        cursor.close()
-        conn.close()
+    return {"status": "SAVED"}
+    
 
-        contact_spoken = format_phone_for_speech(normalize_phone(contact_number))
-
-        return {
-            "status":          "SAVED",
-            "patient_name":    title_case(patient_name),
-            "contact_spoken":  contact_spoken,
-            "complaint_category": category,
-            "message":         (
-                f"Complaint recorded successfully. "
-                f"Management will contact {title_case(patient_name)} "
-                f"on {contact_spoken} within 2 business days."
-            )
-        }
-
-    except Exception as e:
-        return {"status": "ERROR", "message": str(e)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -24,12 +24,13 @@
 #     get_pool().putconn(conn)
 
 
-# db/db_connection.py
+
 
 import os
 import psycopg2
 import psycopg2.pool
 import threading
+from contextlib import contextmanager
 
 _pool = None
 _pool_lock = threading.Lock()
@@ -43,7 +44,6 @@ def get_pool():
                 if not db_url:
                     raise RuntimeError("DATABASE_URL is not set in environment variables")
 
-                # 🔍 Test connection once (fail fast if Supabase is unreachable)
                 test_conn = psycopg2.connect(
                     db_url,
                     sslmode="require",
@@ -59,16 +59,12 @@ def get_pool():
                 )
     return _pool
 
-
 class PooledConnection:
-    """Wraps a psycopg2 connection and returns it to the pool on close()."""
-
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
 
     def close(self):
-        # Return connection to pool instead of closing
         self._pool.putconn(self._conn)
 
     def cursor(self):
@@ -83,14 +79,10 @@ class PooledConnection:
     def __getattr__(self, name):
         return getattr(self._conn, name)
 
-
 def get_db_connection():
     pool = get_pool()
     conn = pool.getconn()
     return PooledConnection(conn, pool)
-
-
-from contextlib import contextmanager
 
 @contextmanager
 def db_cursor():

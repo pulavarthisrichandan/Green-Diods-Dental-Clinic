@@ -109,342 +109,161 @@ def parse_time_str(time_str: str) -> str:
 # AVAILABILITY
 # ─────────────────────────────────────────────────────────────
 
-def check_dentist_availability(date_str: str, time_str: str,
-                                dentist_name: str) -> dict:
-    """
-    Check if a specific dentist has a free slot at date + time.
-    Returns: AVAILABLE | NOT_AVAILABLE | INVALID | ERROR
-    """
-    try:
-        parsed_date = parse_date_str(date_str)
-        parsed_time = parse_time_str(time_str)
+def check_dentist_availability(date_str, time_str, dentist_name):
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT COUNT(*) FROM appointments
+            WHERE preferred_date = %s
+              AND preferred_time = %s
+              AND preferred_dentist = %s
+              AND status = 'confirmed'
+        """, (date_str, time_str, dentist_name))
+        count = cursor.fetchone()[0]
 
-        if not parsed_date or not parsed_time:
-            return {
-                "status":  "INVALID",
-                "message": "Could not understand the date or time."
-            }
+    if count > 0:
+        return {"status": "UNAVAILABLE"}
+    return {"status": "AVAILABLE"}
 
-        with db_cursor() as (cursor, conn):
-
-            cursor.execute("""
-                SELECT COUNT(*) FROM appointments
-                WHERE LOWER(preferred_dentist) LIKE LOWER(%s)
-                AND   preferred_date = %s
-                AND   preferred_time = %s
-                AND   status != 'cancelled'
-            """, (f"%{dentist_name}%", parsed_date, parsed_time))
-
-            count = cursor.fetchone()[0]
-
-        if count > 0:
-            return {
-                "status":  "NOT_AVAILABLE",
-                "dentist": dentist_name,
-                "date":    parsed_date,
-                "time":    parsed_time,
-                "message": f"{dentist_name} already has an appointment at that time."
-            }
-
-        return {
-            "status":  "AVAILABLE",
-            "dentist": dentist_name,
-            "date":    parsed_date,
-            "time":    parsed_time
-        }
-
-    except Exception as e:
-        print(f"[ERROR] check_dentist_availability: {e}")
-        import traceback; traceback.print_exc()
-        return {"status": "ERROR", "message": str(e)}
+    
 
 
-def find_available_dentist(date_str: str, time_str: str) -> dict:
-    """
-    Find first available dentist at given date + time.
-    Returns: FOUND | NONE_AVAILABLE_SUGGEST | INVALID | ERROR
-    """
-    try:
-        parsed_date = parse_date_str(date_str)
-        parsed_time = parse_time_str(time_str)
-
-        if not parsed_date or not parsed_time:
-            return {
-                "status":  "INVALID",
-                "message": "Could not understand the date or time."
-            }
-
-        conn   = get_db_connection()
-        cursor = conn.cursor()
-
-        for dentist in DENTISTS:
-            cursor.execute("""
-                SELECT COUNT(*) FROM appointments
-                WHERE LOWER(preferred_dentist) LIKE LOWER(%s)
-                AND   preferred_date = %s
-                AND   preferred_time = %s
-                AND   status != 'cancelled'
-            """, (f"%{dentist}%", parsed_date, parsed_time))
-
-            count = cursor.fetchone()[0]
-
-            if count == 0:
-                cursor.close()
-                conn.close()
-                return {
-                    "status":  "FOUND",
-                    "dentist": dentist,
-                    "date":    parsed_date,
-                    "time":    parsed_time
-                }
-
-        cursor.close()
-        conn.close()
-
-        # No dentist free — suggest next day same time
-        try:
-            next_day = (
-                datetime.strptime(parsed_date, "%Y-%m-%d") + timedelta(days=1)
-            ).strftime("%Y-%m-%d")
-        except Exception:
-            next_day = parsed_date
-
-        return {
-            "status":         "NONE_AVAILABLE_SUGGEST",
-            "suggested_date": next_day,
-            "suggested_time": parsed_time,
-            "message": (
-                f"No dentists available on {parsed_date} at {parsed_time}. "
-                f"Next available day is {next_day}."
+def find_available_dentist(date_str, time_str):
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT dentist_name FROM dentists
+            WHERE dentist_name NOT IN (
+                SELECT preferred_dentist FROM appointments
+                WHERE preferred_date = %s
+                  AND preferred_time = %s
+                  AND status = 'confirmed'
             )
-        }
+            LIMIT 1
+        """, (date_str, time_str))
+        row = cursor.fetchone()
 
-    except Exception as e:
-        print(f"[ERROR] find_available_dentist: {e}")
-        import traceback; traceback.print_exc()
-        return {"status": "ERROR", "message": str(e)}
+    if row:
+        return {"status": "AVAILABLE", "dentist": row[0]}
+    return {"status": "UNAVAILABLE"}
 
 
 # ─────────────────────────────────────────────────────────────
 # BOOKING
 # ─────────────────────────────────────────────────────────────
 
-def book_appointment(patient_id: int, first_name: str, last_name: str,
-                     date_of_birth: str, contact_number: str,
-                     preferred_treatment: str, preferred_date: str,
-                     preferred_time: str, preferred_dentist: str) -> dict:
-    """
-    Insert a confirmed appointment into the DB.
-    Returns: BOOKED | ERROR
-    """
-    try:
-        parsed_date = parse_date_str(preferred_date)
-        parsed_time = parse_time_str(preferred_time)
+def book_appointment(patient_id, first_name, last_name, date_of_birth,
+                     contact_number, preferred_treatment,
+                     preferred_date, preferred_time, preferred_dentist):
 
-        print(f"[DB] Booking → patient_id={patient_id} "
-              f"date={parsed_date} time={parsed_time} "
-              f"dentist={preferred_dentist} treatment={preferred_treatment}")
-
-        conn   = get_db_connection()
-        cursor = conn.cursor()
-
+    with db_cursor() as (cursor, conn):
         cursor.execute("""
             INSERT INTO appointments
-                (patient_id, first_name, last_name, date_of_birth,
-                 contact_number, preferred_treatment, preferred_date,
-                 preferred_time, preferred_dentist, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'confirmed')
+            (patient_id, first_name, last_name, date_of_birth,
+             contact_number, preferred_treatment, preferred_date,
+             preferred_time, preferred_dentist, status)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'confirmed')
             RETURNING appointment_id
         """, (
-            patient_id,
-            first_name,
-            last_name,
-            date_of_birth,
-            contact_number,
-            preferred_treatment,
-            parsed_date,
-            parsed_time,
-            preferred_dentist
+            patient_id, first_name, last_name, date_of_birth,
+            contact_number, preferred_treatment,
+            preferred_date, preferred_time, preferred_dentist
         ))
-
         appt_id = cursor.fetchone()[0]
-        conn.commit()
-        cursor.close()
-        conn.close()
 
-        print(f"[DB] ✅ Appointment saved — ID {appt_id}")
-
-        return {
-            "status":         "BOOKED",
-            "appointment_id": appt_id,    # internal only — NOT passed to LLM
-            "treatment":      preferred_treatment,
-            "date":           parsed_date,
-            "time":           parsed_time,
-            "dentist":        preferred_dentist
-        }
-
-    except Exception as e:
-        print(f"[ERROR] book_appointment: {e}")
-        import traceback; traceback.print_exc()
-        return {"status": "ERROR", "message": str(e)}
+    return {
+        "status": "BOOKED",
+        "appointment_id": appt_id,
+        "treatment": preferred_treatment,
+        "date": preferred_date,
+        "time": preferred_time,
+        "dentist": preferred_dentist
+    }
 
 
 # ─────────────────────────────────────────────────────────────
 # FETCH
 # ─────────────────────────────────────────────────────────────
 
-def get_patient_appointments(patient_id: int) -> dict:
-    """
-    Get all active (non-cancelled) appointments for a patient.
-    Returns list ordered by date ASC.
-    """
-    try:
-        with db_cursor() as (cursor, conn):
+def get_patient_appointments(patient_id):
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT appointment_id, preferred_treatment,
+                   preferred_date, preferred_time,
+                   preferred_dentist, status
+            FROM appointments
+            WHERE patient_id = %s
+            ORDER BY preferred_date DESC
+        """, (patient_id,))
+        rows = cursor.fetchall()
 
-            cursor.execute("""
-                SELECT appointment_id, preferred_treatment,
-                    preferred_date, preferred_time,
-                    preferred_dentist, status
-                FROM appointments
-                WHERE patient_id = %s
-                AND   status NOT IN ('cancelled', 'completed')
-                ORDER BY preferred_date ASC, preferred_time ASC
-            """, (patient_id,))
+    appts = [
+        {
+            "_id": r[0],
+            "treatment": r[1],
+            "date": str(r[2]),
+            "time": str(r[3]),
+            "dentist": r[4],
+            "status": r[5]
+        } for r in rows
+    ]
 
-            rows = cursor.fetchall()
-
-        if not rows:
-            return {
-                "status":       "NO_APPOINTMENTS",
-                "appointments": [],
-                "count":        0
-            }
-
-        appointments = []
-        for row in rows:
-            appointments.append({
-                "_id":       row[0],          # internal ID — never shown to LLM
-                "treatment": row[1],
-                "date":      str(row[2]),
-                "time":      str(row[3]),
-                "dentist":   row[4],
-                "status":    row[5]
-            })
-
-        return {
-            "status":       "SUCCESS",
-            "appointments": appointments,
-            "count":        len(appointments)
-        }
-
-    except Exception as e:
-        print(f"[ERROR] get_patient_appointments: {e}")
-        import traceback; traceback.print_exc()
-        return {"status": "ERROR", "message": str(e)}
+    return {"status": "SUCCESS", "appointments": appts}
 
 
 # ─────────────────────────────────────────────────────────────
 # UPDATE
 # ─────────────────────────────────────────────────────────────
 
-def update_appointment(appointment_id: int, update_fields: dict) -> dict:
-    """
-    Update one or more fields of an existing appointment.
-    """
-    try:
-        field_map = {
-            "preferred_treatment": None,
-            "preferred_date":      "date",
-            "preferred_time":      "time",
-            "preferred_dentist":   None
-        }
+def update_appointment(appointment_id, fields: dict):
+    if not fields:
+        return {"status": "ERROR", "message": "No fields to update"}
 
-        set_clauses = []
-        values      = []
+    set_clause = ", ".join([f"{k} = %s" for k in fields.keys()])
+    values = list(fields.values()) + [appointment_id]
 
-        if update_fields.get("preferred_treatment"):
-            set_clauses.append("preferred_treatment = %s")
-            values.append(update_fields["preferred_treatment"])
+    with db_cursor() as (cursor, conn):
+        cursor.execute(f"""
+            UPDATE appointments
+            SET {set_clause}
+            WHERE appointment_id = %s
+            RETURNING preferred_treatment, preferred_date,
+                      preferred_time, preferred_dentist
+        """, values)
+        row = cursor.fetchone()
 
-        if update_fields.get("preferred_date"):
-            set_clauses.append("preferred_date = %s")
-            values.append(parse_date_str(update_fields["preferred_date"]))
+    if not row:
+        return {"status": "ERROR", "message": "Appointment not found"}
 
-        if update_fields.get("preferred_time"):
-            set_clauses.append("preferred_time = %s")
-            values.append(parse_time_str(update_fields["preferred_time"]))
-
-        if update_fields.get("preferred_dentist"):
-            set_clauses.append("preferred_dentist = %s")
-            values.append(update_fields["preferred_dentist"])
-
-        if not set_clauses:
-            return {"status": "ERROR", "message": "No fields to update."}
-
-        values.append(appointment_id)
-
-        with db_cursor() as (cursor, conn):
-
-            cursor.execute(f"""
-                UPDATE appointments
-                SET {', '.join(set_clauses)}
-                WHERE appointment_id = %s
-                RETURNING preferred_treatment, preferred_date,
-                        preferred_time, preferred_dentist
-            """, values)
-
-            row = cursor.fetchone()
-        conn.commit()
-
-        if row:
-            return {
-                "status":    "UPDATED",
-                "treatment": row[0],
-                "date":      str(row[1]),
-                "time":      str(row[2]),
-                "dentist":   row[3]
-            }
-
-        return {"status": "ERROR", "message": "Appointment not found."}
-
-    except Exception as e:
-        print(f"[ERROR] update_appointment: {e}")
-        import traceback; traceback.print_exc()
-        return {"status": "ERROR", "message": str(e)}
+    return {
+        "status": "UPDATED",
+        "treatment": row[0],
+        "date": str(row[1]),
+        "time": str(row[2]),
+        "dentist": row[3]
+    }
 
 
 # ─────────────────────────────────────────────────────────────
 # CANCEL
 # ─────────────────────────────────────────────────────────────
 
-def cancel_appointment(appointment_id: int, reason: str = None) -> dict:
-    """Cancel an appointment by ID."""
-    try:
-        with db_cursor() as (cursor, conn):
+def cancel_appointment(appointment_id, reason=None):
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            UPDATE appointments
+            SET status = 'cancelled'
+            WHERE appointment_id = %s
+            RETURNING preferred_treatment, preferred_date,
+                      preferred_time, preferred_dentist
+        """, (appointment_id,))
+        row = cursor.fetchone()
 
-            cursor.execute("""
-                UPDATE appointments
-                SET status = 'cancelled'
-                WHERE appointment_id = %s
-                RETURNING preferred_treatment, preferred_date,
-                        preferred_time, preferred_dentist
-            """, (appointment_id,))
+    if not row:
+        return {"status": "ERROR", "message": "Appointment not found"}
 
-            row = cursor.fetchone()
-        conn.commit()
-
-        if row:
-            return {
-                "status":    "CANCELLED",
-                "treatment": row[0],
-                "date":      str(row[1]),
-                "time":      str(row[2]),
-                "dentist":   row[3]
-            }
-
-        return {"status": "ERROR", "message": "Appointment not found."}
-
-    except Exception as e:
-        print(f"[ERROR] cancel_appointment: {e}")
-        import traceback; traceback.print_exc()
-        return {"status": "ERROR", "message": str(e)}
+    return {
+        "status": "CANCELLED",
+        "treatment": row[0],
+        "date": str(row[1]),
+        "time": str(row[2]),
+        "dentist": row[3]
+    }

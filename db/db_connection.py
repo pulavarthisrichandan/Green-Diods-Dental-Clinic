@@ -104,7 +104,7 @@ import psycopg2
 import socket
 from contextlib import contextmanager
 
-DATABASE_URL = "postgresql://postgres:ChandanK%401231@db.krledcpdypdkzqweawqp.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:NtHJJyplErqWtyuOVmyRqIftIiAPCUwL@shinkansen.proxy.rlwy.net:28107/railway"
 
 # Force IPv4 resolution (fixes cloud IPv6 routing issue)
 _orig_getaddrinfo = socket.getaddrinfo

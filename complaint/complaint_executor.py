@@ -8,7 +8,7 @@ complaint_id is INTERNAL — never returned to or spoken to the patient.
 Patient details always come from the verified session.
 """
 
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 from utils.text_utils import title_case
 from utils.phone_utils import normalize_phone, format_phone_for_speech
 
@@ -106,29 +106,26 @@ def get_complaints_by_name(patient_name: str) -> dict:
     Never called in response to a patient phone call.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT
-                complaint_id,
-                complaint_category,
-                patient_name,
-                contact_number,
-                complaint_text,
-                treatment_name,
-                dentist_name,
-                treatment_date,
-                status,
-                created_at
-            FROM complaints
-            WHERE LOWER(patient_name) LIKE LOWER(%s)
-            ORDER BY created_at DESC
-        """, (f"%{patient_name.strip()}%",))
+            cursor.execute("""
+                SELECT
+                    complaint_id,
+                    complaint_category,
+                    patient_name,
+                    contact_number,
+                    complaint_text,
+                    treatment_name,
+                    dentist_name,
+                    treatment_date,
+                    status,
+                    created_at
+                FROM complaints
+                WHERE LOWER(patient_name) LIKE LOWER(%s)
+                ORDER BY created_at DESC
+            """, (f"%{patient_name.strip()}%",))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         complaints = []
         for row in rows:

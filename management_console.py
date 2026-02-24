@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from datetime import date, datetime
 from functools import wraps
 
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 from utils.text_utils import title_case
 from utils.phone_utils import normalize_phone, format_phone_for_speech
 
@@ -765,16 +765,15 @@ def patients():
 @app.route("/patients/<int:patient_id>")
 @login_required
 def patient_detail(patient_id):
-    conn   = get_db_connection()
-    cursor = conn.cursor()
+    with db_cursor() as (cursor, conn):
 
-    # Patient info
-    cursor.execute("""
-        SELECT first_name, last_name, date_of_birth,
-               contact_number, insurance_info, created_at
-        FROM patients WHERE patient_id = %s
-    """, (patient_id,))
-    p = cursor.fetchone()
+        # Patient info
+        cursor.execute("""
+            SELECT first_name, last_name, date_of_birth,
+                contact_number, insurance_info, created_at
+            FROM patients WHERE patient_id = %s
+        """, (patient_id,))
+        p = cursor.fetchone()
 
     if not p:
         flash("Patient not found.", "error")
@@ -809,8 +808,6 @@ def patient_detail(patient_id):
     """, (patient_id,))
     orders = cursor.fetchall()
 
-    cursor.close()
-    conn.close()
 
     # Build appointment rows
     appt_rows = ""

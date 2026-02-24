@@ -5,7 +5,7 @@ All appointment DB operations matching the new schema.
 
 import re
 from datetime import datetime, date, timedelta
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 
 
 # ─────────────────────────────────────────────────────────────
@@ -125,20 +125,17 @@ def check_dentist_availability(date_str: str, time_str: str,
                 "message": "Could not understand the date or time."
             }
 
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT COUNT(*) FROM appointments
-            WHERE LOWER(preferred_dentist) LIKE LOWER(%s)
-            AND   preferred_date = %s
-            AND   preferred_time = %s
-            AND   status != 'cancelled'
-        """, (f"%{dentist_name}%", parsed_date, parsed_time))
+            cursor.execute("""
+                SELECT COUNT(*) FROM appointments
+                WHERE LOWER(preferred_dentist) LIKE LOWER(%s)
+                AND   preferred_date = %s
+                AND   preferred_time = %s
+                AND   status != 'cancelled'
+            """, (f"%{dentist_name}%", parsed_date, parsed_time))
 
-        count = cursor.fetchone()[0]
-        cursor.close()
-        conn.close()
+            count = cursor.fetchone()[0]
 
         if count > 0:
             return {
@@ -302,22 +299,19 @@ def get_patient_appointments(patient_id: int) -> dict:
     Returns list ordered by date ASC.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT appointment_id, preferred_treatment,
-                   preferred_date, preferred_time,
-                   preferred_dentist, status
-            FROM appointments
-            WHERE patient_id = %s
-            AND   status NOT IN ('cancelled', 'completed')
-            ORDER BY preferred_date ASC, preferred_time ASC
-        """, (patient_id,))
+            cursor.execute("""
+                SELECT appointment_id, preferred_treatment,
+                    preferred_date, preferred_time,
+                    preferred_dentist, status
+                FROM appointments
+                WHERE patient_id = %s
+                AND   status NOT IN ('cancelled', 'completed')
+                ORDER BY preferred_date ASC, preferred_time ASC
+            """, (patient_id,))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         if not rows:
             return {
@@ -389,21 +383,18 @@ def update_appointment(appointment_id: int, update_fields: dict) -> dict:
 
         values.append(appointment_id)
 
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute(f"""
-            UPDATE appointments
-            SET {', '.join(set_clauses)}
-            WHERE appointment_id = %s
-            RETURNING preferred_treatment, preferred_date,
-                      preferred_time, preferred_dentist
-        """, values)
+            cursor.execute(f"""
+                UPDATE appointments
+                SET {', '.join(set_clauses)}
+                WHERE appointment_id = %s
+                RETURNING preferred_treatment, preferred_date,
+                        preferred_time, preferred_dentist
+            """, values)
 
-        row = cursor.fetchone()
+            row = cursor.fetchone()
         conn.commit()
-        cursor.close()
-        conn.close()
 
         if row:
             return {
@@ -429,21 +420,18 @@ def update_appointment(appointment_id: int, update_fields: dict) -> dict:
 def cancel_appointment(appointment_id: int, reason: str = None) -> dict:
     """Cancel an appointment by ID."""
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            UPDATE appointments
-            SET status = 'cancelled'
-            WHERE appointment_id = %s
-            RETURNING preferred_treatment, preferred_date,
-                      preferred_time, preferred_dentist
-        """, (appointment_id,))
+            cursor.execute("""
+                UPDATE appointments
+                SET status = 'cancelled'
+                WHERE appointment_id = %s
+                RETURNING preferred_treatment, preferred_date,
+                        preferred_time, preferred_dentist
+            """, (appointment_id,))
 
-        row = cursor.fetchone()
+            row = cursor.fetchone()
         conn.commit()
-        cursor.close()
-        conn.close()
 
         if row:
             return {

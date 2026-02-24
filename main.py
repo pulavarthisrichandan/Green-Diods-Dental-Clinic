@@ -586,8 +586,14 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             result = {"error": f"Unknown function: {function_name}"}
 
     except Exception as e:
-        import traceback; traceback.print_exc()
-        result = {"error": str(e), "message": "Technical issue. Could we try again?"}
+        import traceback
+        print("========== FUNCTION / DB ERROR ==========")
+        traceback.print_exc()
+        print("=========================================")
+        result = {
+            "status": "ERROR",
+            "message": str(e)
+        }
 
     # -----------------------------------------------------------------------
     # SEND RESULT + TRIGGER BOT RESPONSE

@@ -13,7 +13,7 @@ Usage:
 """
 
 import sys
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,17 +31,14 @@ def separator(title=""):
 
 def show_patients():
     separator("PATIENTS")
-    conn   = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT patient_id, first_name, last_name,
-               date_of_birth, contact_number, insurance_info, created_at
-        FROM patients
-        ORDER BY created_at DESC
-    """)
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT patient_id, first_name, last_name,
+                date_of_birth, contact_number, insurance_info, created_at
+            FROM patients
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
 
     if not rows:
         print("  No patients found.")
@@ -59,26 +56,23 @@ def show_patients():
 
 def show_appointments():
     separator("APPOINTMENTS")
-    conn   = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT
-            a.appointment_id,
-            p.first_name || ' ' || p.last_name AS patient_name,
-            a.preferred_treatment,
-            a.preferred_date,
-            a.preferred_time,
-            a.preferred_dentist,
-            a.status,
-            a.created_at
-        FROM appointments a
-        JOIN patients p ON a.patient_id = p.patient_id
-        ORDER BY a.created_at DESC
-        LIMIT 50
-    """)
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT
+                a.appointment_id,
+                p.first_name || ' ' || p.last_name AS patient_name,
+                a.preferred_treatment,
+                a.preferred_date,
+                a.preferred_time,
+                a.preferred_dentist,
+                a.status,
+                a.created_at
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.patient_id
+            ORDER BY a.created_at DESC
+            LIMIT 50
+        """)
+        rows = cursor.fetchall()
 
     if not rows:
         print("  No appointments found.")
@@ -97,19 +91,16 @@ def show_appointments():
 
 def show_complaints():
     separator("COMPLAINTS")
-    conn   = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT complaint_id, complaint_category, patient_name,
-               contact_number, LEFT(complaint_text, 60),
-               treatment_name, dentist_name, status, created_at
-        FROM complaints
-        ORDER BY created_at DESC
-        LIMIT 50
-    """)
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT complaint_id, complaint_category, patient_name,
+                contact_number, LEFT(complaint_text, 60),
+                treatment_name, dentist_name, status, created_at
+            FROM complaints
+            ORDER BY created_at DESC
+            LIMIT 50
+        """)
+        rows = cursor.fetchall()
 
     if not rows:
         print("  No complaints found.")
@@ -131,24 +122,21 @@ def show_complaints():
 
 def show_orders():
     separator("PATIENT ORDERS")
-    conn   = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT
-            po.order_id,
-            p.first_name || ' ' || p.last_name AS patient_name,
-            po.product_name,
-            po.order_status,
-            po.notes,
-            po.placed_at,
-            po.updated_at
-        FROM patient_orders po
-        JOIN patients p ON po.patient_id = p.patient_id
-        ORDER BY po.placed_at DESC
-    """)
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT
+                po.order_id,
+                p.first_name || ' ' || p.last_name AS patient_name,
+                po.product_name,
+                po.order_status,
+                po.notes,
+                po.placed_at,
+                po.updated_at
+            FROM patient_orders po
+            JOIN patients p ON po.patient_id = p.patient_id
+            ORDER BY po.placed_at DESC
+        """)
+        rows = cursor.fetchall()
 
     if not rows:
         print("  No orders found.")
@@ -168,18 +156,15 @@ def show_orders():
 
 def show_business_logs():
     separator("BUSINESS CALL LOGS")
-    conn   = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT log_id, caller_name, company_name,
-            contact_number, purpose, logged_at
-        FROM business_logs
-        ORDER BY logged_at DESC
-        LIMIT 50
-    """)
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    with db_cursor() as (cursor, conn):
+        cursor.execute("""
+            SELECT log_id, caller_name, company_name,
+                contact_number, purpose, logged_at
+            FROM business_logs
+            ORDER BY logged_at DESC
+            LIMIT 50
+        """)
+        rows = cursor.fetchall()
 
     if not rows:
         print("  No business logs found.")
@@ -214,13 +199,10 @@ def show_summary():
     for table, label in tables:
         # Fresh connection per table — no transaction bleed
         try:
-            conn   = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cursor.fetchone()[0]
+            with db_cursor() as (cursor, conn):
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
             print(f"  {label:<25} : {count} records")
-            cursor.close()
-            conn.close()
         except Exception as e:
             conn.rollback()   # ← clear failed transaction
             print(f"  {label:<25} : TABLE MISSING — run schema.sql to create it")
@@ -275,7 +257,7 @@ def clear_test_data():
         print("  Cancelled.")
         return
 
-    conn   = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     tables = [

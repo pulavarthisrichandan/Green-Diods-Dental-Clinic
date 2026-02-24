@@ -24,24 +24,39 @@
 #     get_pool().putconn(conn)
 
 
+# db/db_connection.py
+
+import os
 import psycopg2
 import psycopg2.pool
-import os
+import threading
 
 _pool = None
+_pool_lock = threading.Lock()
 
 def get_pool():
     global _pool
     if _pool is None:
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            raise RuntimeError("DATABASE_URL is not set in environment variables")
-        _pool = psycopg2.pool.SimpleConnectionPool(
-            1, 10,
-            dsn=db_url,
-            sslmode="require",
-            connect_timeout=5,
-        )
+        with _pool_lock:
+            if _pool is None:
+                db_url = os.getenv("DATABASE_URL")
+                if not db_url:
+                    raise RuntimeError("DATABASE_URL is not set in environment variables")
+
+                # 🔍 Test connection once (fail fast if Supabase is unreachable)
+                test_conn = psycopg2.connect(
+                    db_url,
+                    sslmode="require",
+                    connect_timeout=10
+                )
+                test_conn.close()
+
+                _pool = psycopg2.pool.SimpleConnectionPool(
+                    1, 10,
+                    dsn=db_url,
+                    sslmode="require",
+                    connect_timeout=10,
+                )
     return _pool
 
 
@@ -52,11 +67,10 @@ class PooledConnection:
         self._conn = conn
         self._pool = pool
 
-    # Intercept close() → return to pool instead of destroying
     def close(self):
+        # Return connection to pool instead of closing
         self._pool.putconn(self._conn)
 
-    # Forward everything else to the real connection
     def cursor(self):
         return self._conn.cursor()
 
@@ -76,6 +90,19 @@ def get_db_connection():
     return PooledConnection(conn, pool)
 
 
-def release_db_connection(conn):
-    """Optional explicit release — conn.close() works the same way."""
-    conn.close()
+from contextlib import contextmanager
+
+@contextmanager
+def db_cursor():
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        yield cursor, conn
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

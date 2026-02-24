@@ -10,7 +10,7 @@ All lookups use patient_id from the verified session.
 order_id, appointment_id are INTERNAL — never shown to patient.
 """
 
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 from utils.date_time_utils import parse_date, parse_time, format_date_for_speech, format_time_for_speech
 from utils.text_utils import title_case
 from datetime import date
@@ -27,24 +27,21 @@ def get_patient_orders(patient_id: int) -> dict:
     order_id is never included in output.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT
-                product_name,
-                order_status,
-                notes,
-                placed_at,
-                updated_at
-            FROM patient_orders
-            WHERE patient_id = %s
-            ORDER BY placed_at DESC
-        """, (patient_id,))
+            cursor.execute("""
+                SELECT
+                    product_name,
+                    order_status,
+                    notes,
+                    placed_at,
+                    updated_at
+                FROM patient_orders
+                WHERE patient_id = %s
+                ORDER BY placed_at DESC
+            """, (patient_id,))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         if not rows:
             return {
@@ -111,27 +108,24 @@ def get_upcoming_appointments(patient_id: int) -> dict:
     appointment_id is never included in output to caller.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
+            
+            today_str = date.today().strftime("%d-%m-%Y")
 
-        today_str = date.today().strftime("%d-%m-%Y")
+            cursor.execute("""
+                SELECT
+                    preferred_treatment,
+                    preferred_date,
+                    preferred_time,
+                    preferred_dentist,
+                    status
+                FROM appointments
+                WHERE patient_id = %s
+                AND status NOT IN ('cancelled')
+                ORDER BY preferred_date ASC, preferred_time ASC
+            """, (patient_id,))
 
-        cursor.execute("""
-            SELECT
-                preferred_treatment,
-                preferred_date,
-                preferred_time,
-                preferred_dentist,
-                status
-            FROM appointments
-            WHERE patient_id = %s
-              AND status NOT IN ('cancelled')
-            ORDER BY preferred_date ASC, preferred_time ASC
-        """, (patient_id,))
-
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         upcoming = []
         for row in rows:
@@ -175,24 +169,21 @@ def get_past_appointments(patient_id: int) -> dict:
     appointment_id is never included in output to caller.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT
-                preferred_treatment,
-                preferred_date,
-                preferred_time,
-                preferred_dentist,
-                status
-            FROM appointments
-            WHERE patient_id = %s
-            ORDER BY preferred_date DESC
-        """, (patient_id,))
+            cursor.execute("""
+                SELECT
+                    preferred_treatment,
+                    preferred_date,
+                    preferred_time,
+                    preferred_dentist,
+                    status
+                FROM appointments
+                WHERE patient_id = %s
+                ORDER BY preferred_date DESC
+            """, (patient_id,))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         past = []
         for row in rows:

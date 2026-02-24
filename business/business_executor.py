@@ -6,7 +6,7 @@ DB operations for:
     - Updating patient order status          → patient_orders table
 """
 
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 from utils.phone_utils import normalize_phone
 from utils.text_utils import title_case
 
@@ -153,29 +153,26 @@ def get_all_pending_orders() -> dict:
     Returns all orders with status 'placed' or 'ready'.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT
-                order_id,
-                patient_id,
-                first_name,
-                last_name,
-                contact_number,
-                product_name,
-                order_status,
-                notes,
-                placed_at,
-                updated_at
-            FROM patient_orders
-            WHERE order_status IN ('placed', 'ready')
-            ORDER BY placed_at DESC
-        """)
+            cursor.execute("""
+                SELECT
+                    order_id,
+                    patient_id,
+                    first_name,
+                    last_name,
+                    contact_number,
+                    product_name,
+                    order_status,
+                    notes,
+                    placed_at,
+                    updated_at
+                FROM patient_orders
+                WHERE order_status IN ('placed', 'ready')
+                ORDER BY placed_at DESC
+            """)
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         orders = []
         for row in rows:
@@ -212,24 +209,21 @@ def get_orders_for_patient(patient_id: int) -> dict:
     Called by general_enquiry module when patient asks about their order.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT
-                product_name,
-                order_status,
-                notes,
-                placed_at,
-                updated_at
-            FROM patient_orders
-            WHERE patient_id = %s
-            ORDER BY placed_at DESC
-        """, (patient_id,))
+            cursor.execute("""
+                SELECT
+                    product_name,
+                    order_status,
+                    notes,
+                    placed_at,
+                    updated_at
+                FROM patient_orders
+                WHERE patient_id = %s
+                ORDER BY placed_at DESC
+            """, (patient_id,))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         orders = []
         for row in rows:

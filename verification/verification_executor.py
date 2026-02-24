@@ -4,7 +4,7 @@ Handles all DB operations for patient verification and account creation.
 No patient_id is ever returned to the caller for display.
 """
 
-from db.db_connection import get_db_connection
+from db.db_connection import get_db_connection, db_cursor
 from utils.phone_utils import normalize_phone
 from utils.text_utils import title_case
 from utils.date_time_utils import dob_to_db_format
@@ -34,20 +34,17 @@ def verify_by_lastname_dob(last_name: str, dob: str) -> dict:
     last_name_clean = last_name.strip().lower()
 
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT patient_id, first_name, last_name,
-                   date_of_birth, contact_number, insurance_info
-            FROM patients
-            WHERE LOWER(last_name) = %s
-              AND date_of_birth    = %s
-        """, (last_name_clean, dob_clean))
+            cursor.execute("""
+                SELECT patient_id, first_name, last_name,
+                    date_of_birth, contact_number, insurance_info
+                FROM patients
+                WHERE LOWER(last_name) = %s
+                AND date_of_birth    = %s
+            """, (last_name_clean, dob_clean))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         if not rows:
             return {
@@ -99,20 +96,17 @@ def verify_by_lastname_dob_contact(
     contact_clean   = normalize_phone(contact_number)
 
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT patient_id, first_name, last_name,
-                   date_of_birth, contact_number, insurance_info
-            FROM patients
-            WHERE LOWER(last_name) = %s
-              AND date_of_birth    = %s
-        """, (last_name_clean, dob_clean))
+            cursor.execute("""
+                SELECT patient_id, first_name, last_name,
+                    date_of_birth, contact_number, insurance_info
+                FROM patients
+                WHERE LOWER(last_name) = %s
+                AND date_of_birth    = %s
+            """, (last_name_clean, dob_clean))
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+            rows = cursor.fetchall()
 
         for row in rows:
             if normalize_phone(row[4]) == contact_clean:
@@ -209,19 +203,16 @@ def get_patient_by_id(patient_id: int) -> dict:
     Never call this in response to user input.
     """
     try:
-        conn   = get_db_connection()
-        cursor = conn.cursor()
+        with db_cursor() as (cursor, conn):
 
-        cursor.execute("""
-            SELECT patient_id, first_name, last_name,
-                   date_of_birth, contact_number, insurance_info
-            FROM patients
-            WHERE patient_id = %s
-        """, (patient_id,))
+            cursor.execute("""
+                SELECT patient_id, first_name, last_name,
+                    date_of_birth, contact_number, insurance_info
+                FROM patients
+                WHERE patient_id = %s
+            """, (patient_id,))
 
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
+            row = cursor.fetchone()
 
         if not row:
             return {"status": "NOT_FOUND"}

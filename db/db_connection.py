@@ -99,16 +99,20 @@ from contextlib import contextmanager
 #         if conn:
 #             conn.close()
 
-# db/db_connection.py
-
-# db/db_connection.py
 
 import psycopg2
+import socket
 from contextlib import contextmanager
 
-# 🔴 Paste the SAME working DATABASE_URL you used in db_test.py
 DATABASE_URL = "postgresql://postgres:ChandanK%401231@db.krledcpdypdkzqweawqp.supabase.co:5432/postgres"
 
+# Force IPv4 resolution (fixes cloud IPv6 routing issue)
+_orig_getaddrinfo = socket.getaddrinfo
+def _ipv4_only_getaddrinfo(*args, **kwargs):
+    infos = _orig_getaddrinfo(*args, **kwargs)
+    return [info for info in infos if info[0] == socket.AF_INET]
+
+socket.getaddrinfo = _ipv4_only_getaddrinfo
 
 @contextmanager
 def db_cursor():
@@ -124,7 +128,6 @@ def db_cursor():
         yield cursor, conn
         conn.commit()
     except Exception as e:
-        # Print full error for visibility
         print("❌ DB ERROR:", type(e).__name__, e)
         if conn:
             conn.rollback()

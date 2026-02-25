@@ -11,18 +11,16 @@ Patient details always come from the verified session.
 from db.db_connection import db_cursor
 from utils.text_utils import title_case
 from utils.phone_utils import normalize_phone, format_phone_for_speech
+import traceback
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SAVE COMPLAINT
 # ─────────────────────────────────────────────────────────────────────────────
 
-from db.db_connection import db_cursor
-
 def save_complaint(patient_name, contact_number, complaint_text,
                    complaint_category="general",
                    treatment_name=None, dentist_name=None, treatment_date=None):
-    
     """
     Save a patient complaint to the DB.
 
@@ -34,20 +32,36 @@ def save_complaint(patient_name, contact_number, complaint_text,
         status = ERROR   → DB error
     """
 
-    with db_cursor() as (cursor, conn):
-        cursor.execute("""
-            INSERT INTO complaints
-            (patient_name, contact_number, complaint_text,
-             complaint_category, treatment_name, dentist_name, treatment_date)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-        """, (
-            patient_name, contact_number, complaint_text,
-            complaint_category, treatment_name, dentist_name, treatment_date
-        ))
+    print(f"[COMPLAINT] Saving complaint for: {patient_name}")
+    print(f"[COMPLAINT] Category : {complaint_category}")
+    print(f"[COMPLAINT] Text     : {complaint_text}")
+    print(f"[COMPLAINT] Treatment: {treatment_name} | Dentist: {dentist_name}")
 
-    return {"status": "SAVED"}
-    
+    try:
+        with db_cursor() as (cursor, conn):
+            cursor.execute("""
+                INSERT INTO complaints
+                (patient_name, contact_number, complaint_text,
+                 complaint_category, treatment_name, dentist_name, treatment_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                patient_name,
+                contact_number,
+                complaint_text,
+                complaint_category,
+                treatment_name,
+                dentist_name,
+                treatment_date
+            ))
+            conn.commit()   # ✅ THIS IS THE FIX — was missing before
 
+        print("[COMPLAINT] ✅ Saved successfully")
+        return {"status": "SAVED"}
+
+    except Exception as e:
+        print("[COMPLAINT] ❌ Failed to save complaint:")
+        traceback.print_exc()
+        return {"status": "ERROR", "message": str(e)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +75,6 @@ def get_complaints_by_name(patient_name: str) -> dict:
     """
     try:
         with db_cursor() as (cursor, conn):
-
             cursor.execute("""
                 SELECT
                     complaint_id,
@@ -84,19 +97,21 @@ def get_complaints_by_name(patient_name: str) -> dict:
         complaints = []
         for row in rows:
             complaints.append({
-                "complaint_id":       row[0],
-                "category":           row[1],
-                "patient_name":       row[2],
-                "contact_number":     row[3],
-                "complaint_text":     row[4],
-                "treatment_name":     row[5],
-                "dentist_name":       row[6],
-                "treatment_date":     row[7],
-                "status":             row[8],
-                "created_at":         str(row[9])
+                "complaint_id":   row[0],
+                "category":       row[1],
+                "patient_name":   row[2],
+                "contact_number": row[3],
+                "complaint_text": row[4],
+                "treatment_name": row[5],
+                "dentist_name":   row[6],
+                "treatment_date": row[7],
+                "status":         row[8],
+                "created_at":     str(row[9])
             })
 
         return {"status": "SUCCESS", "complaints": complaints, "count": len(complaints)}
 
     except Exception as e:
+        print("[COMPLAINT] ❌ get_complaints_by_name failed:")
+        traceback.print_exc()
         return {"status": "ERROR", "message": str(e)}

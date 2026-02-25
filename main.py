@@ -57,7 +57,7 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
 OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
-VOICE                        = "marin"   # try: "coral", "marin", or "cedar"
+VOICE                        = "cedar"   # try: "coral", "marin", or "cedar"
 TEMPERATURE                  = 0.8
 VAD_THRESHOLD                = 0.5
 PREFIX_PADDING_MS            = 300

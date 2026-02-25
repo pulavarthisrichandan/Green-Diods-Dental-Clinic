@@ -55,9 +55,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
-VOICE                        = "sage"
-TEMPERATURE                  = 0.7
+OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
+VOICE                        = "coral"   # try: "coral", "marin", or "cedar"
+TEMPERATURE                  = 0.8
 VAD_THRESHOLD                = 0.5
 PREFIX_PADDING_MS            = 300
 SILENCE_DURATION_MS          = 600
@@ -110,6 +110,19 @@ SYSTEM_INSTRUCTIONS = (
     "PERSONALITY: warm, concise, English only, use first name after verification\n"
     "GREETING on [CALL_STARTED]: Hello! Thank you for calling Green Diode's Dental Clinic. "
     "I'm Sarah, how may I assist you today?\n\n"
+
+    """
+    SPEAKING STYLE — FOLLOW THESE EXACTLY
+    - Speak naturally like a real person, not a script reader
+    - Use contractions always: "I'll" not "I will", "you're" not "you are", "we've" not "we have"
+    - Use natural filler transitions: "Of course!", "Absolutely!", "Sure thing!", "Let me check that for you"
+    - When confirming details, sound warm: "Perfect, got that!" not "Confirmed."
+    - Vary your sentence length — don't speak in uniform rhythm
+    - Pause naturally between thoughts — don't rush
+    - Show empathy with tone: "Oh I'm sorry to hear that" / "That's great!"
+    - Never read out structured lists — convert them to natural spoken sentences
+    - Instead of "Your appointment is: Date: 5th March, Time: 10 AM" say "You're booked in for the 5th of March at 10 in the morning"
+    """
 
     "CALLER TYPE IDENTIFICATION -- READ CAREFULLY:\n"
     "\n"

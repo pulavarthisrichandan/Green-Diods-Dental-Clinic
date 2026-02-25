@@ -1,139 +1,113 @@
-# import psycopg2
-# import psycopg2.pool
-# import os
+"""
+db/db_connection.py — DentalBot v2
 
-# _pool = None
-
-# def get_pool():
-#     global _pool
-#     if _pool is None:
-#         _pool = psycopg2.pool.SimpleConnectionPool(
-#             1,   # min connections
-#             10,  # max connections
-#             host=os.getenv("DB_HOST"),
-#             database=os.getenv("DB_NAME"),
-#             user=os.getenv("DB_USER"),
-#             password=os.getenv("DB_PASSWORD")
-#         )
-#     return _pool
-
-# def get_db_connection():
-#     return get_pool().getconn()
-
-# def release_db_connection(conn):
-#     get_pool().putconn(conn)
-
-
-
+Connection pool for Railway PostgreSQL.
+- Uses SimpleConnectionPool (1-10 connections) for performance
+- Forces IPv4 to fix Railway cloud routing issues
+- Provides both db_cursor() context manager AND get_db_connection()
+  so both old and new executor patterns work
+"""
 
 import os
+import socket
 import psycopg2
 import psycopg2.pool
 import threading
+import traceback
 from contextlib import contextmanager
 
-# _pool = None
-# _pool_lock = threading.Lock()
+# ─────────────────────────────────────────────────────────────────────────────
+# DATABASE URL
+# ─────────────────────────────────────────────────────────────────────────────
 
-# def get_pool():
-#     global _pool
-#     if _pool is None:
-#         with _pool_lock:
-#             if _pool is None:
-#                 db_url = os.getenv("DATABASE_URL")
-#                 if not db_url:
-#                     raise RuntimeError("DATABASE_URL is not set in environment variables")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:NtHJJyplErqWtyuOVmyRqIftIiAPCUwL@shinkansen.proxy.rlwy.net:28107/railway"
+)
 
-#                 test_conn = psycopg2.connect(
-#                     db_url,
-#                     sslmode="require",
-#                     connect_timeout=10
-#                 )
-#                 test_conn.close()
+# ─────────────────────────────────────────────────────────────────────────────
+# FORCE IPv4 — fixes Railway cloud IPv6 routing issue
+# Without this, connections randomly fail on Railway's network
+# ─────────────────────────────────────────────────────────────────────────────
 
-#                 _pool = psycopg2.pool.SimpleConnectionPool(
-#                     1, 10,
-#                     dsn=db_url,
-#                     sslmode="require",
-#                     connect_timeout=10,
-#                 )
-#     return _pool
-
-# class PooledConnection:
-#     def __init__(self, conn, pool):
-#         self._conn = conn
-#         self._pool = pool
-
-#     def close(self):
-#         self._pool.putconn(self._conn)
-
-#     def cursor(self):
-#         return self._conn.cursor()
-
-#     def commit(self):
-#         return self._conn.commit()
-
-#     def rollback(self):
-#         return self._conn.rollback()
-
-#     def __getattr__(self, name):
-#         return getattr(self._conn, name)
-
-# def get_db_connection():
-#     pool = get_pool()
-#     conn = pool.getconn()
-#     return PooledConnection(conn, pool)
-
-# @contextmanager
-# def db_cursor():
-#     conn = None
-#     cursor = None
-#     try:
-#         conn = get_db_connection()
-#         cursor = conn.cursor()
-#         yield cursor, conn
-#         conn.commit()
-#     finally:
-#         if cursor:
-#             cursor.close()
-#         if conn:
-#             conn.close()
-
-
-import psycopg2
-import socket
-from contextlib import contextmanager
-
-DATABASE_URL = "postgresql://postgres:NtHJJyplErqWtyuOVmyRqIftIiAPCUwL@shinkansen.proxy.rlwy.net:28107/railway"
-
-# Force IPv4 resolution (fixes cloud IPv6 routing issue)
 _orig_getaddrinfo = socket.getaddrinfo
+
 def _ipv4_only_getaddrinfo(*args, **kwargs):
     infos = _orig_getaddrinfo(*args, **kwargs)
-    return [info for info in infos if info[0] == socket.AF_INET]
+    ipv4  = [info for info in infos if info[0] == socket.AF_INET]
+    return ipv4 if ipv4 else infos   # fallback to all if no IPv4 found
 
 socket.getaddrinfo = _ipv4_only_getaddrinfo
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CONNECTION POOL
+# Reuses connections across calls instead of opening a new one every time.
+# Handles up to 10 concurrent DB operations (enough for multiple live calls).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_pool      = None
+_pool_lock = threading.Lock()
+
+def get_pool() -> psycopg2.pool.SimpleConnectionPool:
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                if not DATABASE_URL:
+                    raise RuntimeError("DATABASE_URL is not set in environment variables")
+
+                print("[DB] Initialising connection pool...")
+                _pool = psycopg2.pool.SimpleConnectionPool(
+                    1,    # min connections — always keep 1 alive
+                    10,   # max connections — handles concurrent callers
+                    dsn=DATABASE_URL,
+                    sslmode="prefer",
+                    connect_timeout=10
+                )
+                print("[DB] ✅ Connection pool ready (1–10 connections)")
+    return _pool
+
+
+def get_db_connection():
+    """
+    Get a raw connection from the pool.
+    Caller is responsible for conn.commit() and conn.close() (returns to pool).
+    Used by old-style executors.
+    """
+    return get_pool().getconn()
+
+
+def release_db_connection(conn):
+    """Return a connection back to the pool."""
+    try:
+        get_pool().putconn(conn)
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# db_cursor() CONTEXT MANAGER
+# Used by all new-style executors with `with db_cursor() as (cursor, conn):`
+# Automatically commits on success, rolls back on error, returns conn to pool.
+# ─────────────────────────────────────────────────────────────────────────────
+
 @contextmanager
 def db_cursor():
-    conn = None
+    conn   = None
     cursor = None
     try:
-        conn = psycopg2.connect(
-            DATABASE_URL,
-            sslmode="prefer",
-            connect_timeout=10
-        )
+        conn   = get_pool().getconn()
         cursor = conn.cursor()
         yield cursor, conn
-        conn.commit()
+        conn.commit()    # ✅ auto-commit on clean exit
     except Exception as e:
-        print("❌ DB ERROR:", type(e).__name__, e)
+        print(f"❌ DB ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
         if conn:
-            conn.rollback()
+            conn.rollback()   # ✅ rollback on any error
         raise
     finally:
         if cursor:
             cursor.close()
         if conn:
-            conn.close()
+            get_pool().putconn(conn)   # ✅ return to pool, not close()

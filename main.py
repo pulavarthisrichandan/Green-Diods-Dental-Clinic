@@ -32,7 +32,7 @@ from appointment.executor import (
 from complaint.complaint_executor import save_complaint
 from business.business_controller import (
     handle_business_info, handle_insurance_query, handle_warranty_query,
-    _classify_business_call, _extract_order_info
+    classify_business_call, extract_order_info          # ✅ removed _ prefix
 )
 from business.business_executor import (
     log_business_call, update_order_status_by_patient_name
@@ -40,8 +40,9 @@ from business.business_executor import (
 from general_enquiry.enquiry_executor import (
     get_patient_orders, get_upcoming_appointments, get_past_appointments
 )
-from knowledge_base.kb_controller import handle_kb_query
+from knowledge_base.kb_controller import handle_kb_query  # ✅ was knowledge_base (wrong)
 from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
+
 
 load_dotenv()
 app = FastAPI()
@@ -785,7 +786,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     result = {"status": r["status"], "message": r.get("message", "None found.")}
 
         elif function_name == "log_supplier_call":
-            sub_type = _classify_business_call(arguments.get("purpose", ""))
+            sub_type = classify_business_call(arguments.get("purpose", ""))   # ✅ was _classify_business_call
             log_business_call(
                 caller_name=arguments.get("caller_name"),
                 company_name=arguments.get("company_name"),
@@ -794,7 +795,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 full_notes=json.dumps(arguments)
             )
             if sub_type == "order_ready":
-                oi = _extract_order_info(arguments.get("purpose", ""))
+                oi = extract_order_info(arguments.get("purpose", ""))          # ✅ was _extract_order_info
                 if oi.get("patient_name") and oi.get("product_name"):
                     update_order_status_by_patient_name(
                         patient_name=oi["patient_name"],
@@ -808,6 +809,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 "status":  "LOGGED",
                 "message": f"Call from {caller_name} ({company_name}) logged. Management will follow up."
             }
+
 
         else:
             result = {"error": f"Unknown function: {function_name}"}

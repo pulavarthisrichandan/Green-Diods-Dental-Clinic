@@ -59,9 +59,9 @@ if not OPENAI_API_KEY:
 OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
 VOICE                        = "marin"   # try: "coral", "marin", or "cedar", "shimmer", "nova", "sage"
 TEMPERATURE                  = 0.8 
-VAD_THRESHOLD                = 0.5
+VAD_THRESHOLD                = 0.75
 PREFIX_PADDING_MS            = 300
-SILENCE_DURATION_MS          = 600
+SILENCE_DURATION_MS          = 900
 CLOUD_RUN_WSS_BASE           = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 
@@ -512,7 +512,7 @@ def get_session_config() -> dict:
 # response.create sent EXACTLY ONCE here. Never in response.done.
 # ---------------------------------------------------------------------------
 
-async def handle_function_call(function_name, arguments, call_id, session, openai_ws):
+async def handle_function_call(function_name, arguments, call_id, session, openai_ws, disarm_fn=None):
     print(f"[FUNCTION] {function_name}")
     print(f"[ARGS]     {json.dumps(arguments, indent=2)}")
     result = {}
@@ -820,6 +820,18 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
         print("=========================================")
         result = {"status": "ERROR", "message": str(e)}
 
+    # ✅ Disarm via passed-in function — works across scope boundary
+    if disarm_fn:
+        disarm_fn()
+
+    await openai_ws.send(json.dumps({
+        "type": "conversation.item.create",
+        "item": {"type": "function_call_output", "call_id": call_id, "output": json.dumps(result)}
+    }))
+    await openai_ws.send(json.dumps({"type": "response.create"}))
+    print(f"[RESULT] {json.dumps(result, indent=2)}")
+
+
     await openai_ws.send(json.dumps({
         "type": "conversation.item.create",
         "item": {"type": "function_call_output", "call_id": call_id, "output": json.dumps(result)}
@@ -884,15 +896,19 @@ async def handle_media_stream(websocket: WebSocket):
         wd = {"task": None, "armed": False}
 
         async def watchdog():
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(1.5)   # ✅ was 0.8 — give more time before nudging
             if not wd["armed"]:
                 return
-            print("[WATCHDOG] Bot silent -- nudge")
+            # ✅ Don't nudge if bot is still speaking
+            if session and session.get("is_speaking"):
+                return
+            print("[WATCHDOG] Bot silent — nudge")
             try:
                 await openai_ws.send(json.dumps({"type": "response.create"}))
             except Exception as e:
                 print(f"[WATCHDOG ERROR] {e}")
             wd["armed"] = False
+
 
         def arm_watchdog():
             if wd["task"] and not wd["task"].done():
@@ -1015,10 +1031,21 @@ async def handle_media_stream(websocket: WebSocket):
                     elif event_type == "input_audio_buffer.cleared":
                         pass
 
-                    elif event_type == "response.function_call_arguments.start":
-                        pending_fn      = data.get("name")
-                        pending_call_id = data.get("call_id")
-                        pending_args    = ""
+                    elif event_type == "response.function_call_arguments.done":
+                        fn  = data.get("name")      or pending_fn
+                        cid = data.get("call_id")   or pending_call_id
+                        raw = data.get("arguments") or pending_args
+                        try:
+                            args = json.loads(raw or "{}")
+                        except json.JSONDecodeError:
+                            args = {}
+                        if fn:
+                            # ✅ Pass disarm_watchdog so it can cancel the timer
+                            # ✅ Removed arm_watchdog() after — function already sends response.create
+                            await handle_function_call(fn, args, cid, session, openai_ws, disarm_watchdog)
+                        pending_fn = pending_call_id = None
+                        pending_args = ""
+
 
                     elif event_type == "response.function_call_arguments.delta":
                         pending_args += data.get("delta", "")

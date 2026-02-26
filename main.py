@@ -15,6 +15,11 @@ Fixes applied:
   10. keep_alive() task — prevents Twilio 60s inactivity timeout mid-conversation
   11. receive_from_twilio — unknown events ignored, not breaking the loop
   12. VAD threshold + silence duration corrected
+  13. keep_alive() sends session.update ping instead of empty audio (was causing errors)
+  14. Barge-in guarded by is_speaking check (was firing after response.done)
+  15. call_active flag stops keep_alive() after call ends
+  16. COMPLAINTS: two-path flow — general needs NO verification, treatment needs verification
+  17. file_complaint handler supports anonymous name for general complaints
 """
 
 import os
@@ -63,11 +68,11 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
 OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
-VOICE                        = "coral"        # warm female voice — best for dental receptionist
+VOICE                        = "coral"
 TEMPERATURE                  = 0.8
-VAD_THRESHOLD                = 0.75           # ✅ was 0.5 — less jumpy
+VAD_THRESHOLD                = 0.75
 PREFIX_PADDING_MS            = 300
-SILENCE_DURATION_MS          = 900            # ✅ was 600 — gives patient time to finish
+SILENCE_DURATION_MS          = 900
 CLOUD_RUN_WSS_BASE           = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 
@@ -228,9 +233,41 @@ SYSTEM_INSTRUCTIONS = (
     "2. Use appointment_index (1,2,3...) for update or cancel\n"
     "CANCEL: confirm -> cancel_my_appointment() after YES\n\n"
 
-    "COMPLAINTS (post-verification):\n"
-    "Empathy first -> describe -> general or treatment -> confirm -> file_complaint()\n"
-    "NEVER mention complaint ID\n\n"
+    # ✅ FIX 16: TWO-PATH COMPLAINT FLOW
+    "COMPLAINTS — TWO-PATH FLOW (read every word carefully):\n"
+    "\n"
+    "STEP 1: ALWAYS ask first: 'Is your complaint general — like about our service or clinic — "
+    "or is it specifically about a treatment you received here?'\n"
+    "\n"
+    "PATH A — GENERAL COMPLAINT (NO verification needed, NO last name, NO DOB):\n"
+    "  Triggers: clinic, staff, waiting time, billing, phone service, reception, "
+    "opening hours, parking, cleanliness, or anything NOT about a specific dental treatment.\n"
+    "  Steps:\n"
+    "  1. Show empathy: 'I'm so sorry to hear that, I completely understand your frustration.'\n"
+    "  2. Ask: 'Could you tell me a bit more about what happened?'\n"
+    "  3. Ask: 'May I take your name for our records?'\n"
+    "  4. Confirm: 'Just to confirm — [complaint summary] — shall I go ahead and log that for you?'\n"
+    "  5. Patient says YES -> call file_complaint(category=general, patient_name=name they gave)\n"
+    "  !!! NEVER ask for last name or date of birth for a general complaint !!!\n"
+    "  !!! NEVER run verify_existing_patient() for a general complaint     !!!\n"
+    "\n"
+    "PATH B — TREATMENT COMPLAINT (verification required):\n"
+    "  Triggers: dentist, filling, implant, crown, root canal, extraction, aligner, "
+    "veneer, whitening, mouthguard, pain AFTER a procedure, or any specific dental treatment.\n"
+    "  Steps:\n"
+    "  1. Show empathy: 'I'm really sorry to hear you've had an issue with your treatment.'\n"
+    "  2. Say: 'To look up your treatment records I'll need to quickly verify your identity.'\n"
+    "  3. Follow EXISTING PATIENT FLOW: ask last name -> ask DOB -> verify_existing_patient()\n"
+    "  4. After verification, collect: treatment name, dentist name, approx date, complaint details\n"
+    "  5. Confirm all details with patient\n"
+    "  6. Patient says YES -> call file_complaint(category=treatment)\n"
+    "\n"
+    "COMPLAINT RULES (never break):\n"
+    "  - Ask PATH A or PATH B question FIRST — never jump straight to verification\n"
+    "  - NEVER ask last name or DOB for a general (PATH A) complaint\n"
+    "  - NEVER ask 'are you new or existing' for any complaint\n"
+    "  - NEVER mention complaint ID in response\n"
+    "  - Always show empathy BEFORE asking any details\n\n"
 
     "MID-FLOW: unrelated question -> answer -> ask shall we continue -> YES resume\n\n"
     "ENDING: Thank you for calling Green Diode's Dental Clinic. Have a wonderful day!\n\n"
@@ -434,12 +471,19 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "file_complaint",
-                    "description": "Save patient complaint after confirmation.",
+                    # ✅ FIX 16: Updated description — general complaints do NOT need verification
+                    "description": (
+                        "Save a patient complaint. "
+                        "For category=general: NO verification needed. Use patient_name from what caller said. "
+                        "For category=treatment: patient must be verified first. "
+                        "NEVER require last name or DOB for a general complaint."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "complaint_text":     {"type": "string"},
                             "complaint_category": {"type": "string", "enum": ["general", "treatment"]},
+                            "patient_name":       {"type": "string", "description": "Name caller provided (general) or from verified session (treatment)"},
                             "treatment_name":     {"type": "string"},
                             "dentist_name":       {"type": "string"},
                             "treatment_date":     {"type": "string"}
@@ -525,8 +569,6 @@ def get_session_config() -> dict:
 
 # ---------------------------------------------------------------------------
 # FUNCTION CALL HANDLER
-# ✅ FIX: accepts disarm_fn parameter — works across scope boundary
-# ✅ FIX: response.create sent EXACTLY ONCE here. Never in response.done.
 # ---------------------------------------------------------------------------
 
 async def handle_function_call(function_name, arguments, call_id, session, openai_ws, disarm_fn=None):
@@ -717,25 +759,54 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     result = {"status": "ERROR", "message": "Invalid index. Call get_my_appointments first."}
 
         elif function_name == "file_complaint":
-            if not session.get("verified"):
-                result = {"status": "ERROR", "message": "Patient not verified."}
+            # ✅ FIX 17: TWO-PATH — general complaints do NOT need a verified session
+            category = arguments.get("complaint_category", "general")
+
+            if category == "treatment":
+                # Treatment complaints MUST have a verified patient
+                if not session.get("verified"):
+                    result = {"status": "ERROR", "message": "Patient must be verified for a treatment complaint."}
+                else:
+                    p          = session["patient_data"]
+                    first_name = p["first_name"]
+                    last_name  = p["last_name"]
+                    r = save_complaint(
+                        patient_name=f"{first_name} {last_name}",
+                        contact_number=p.get("contact_number", ""),
+                        complaint_text=arguments.get("complaint_text", ""),
+                        complaint_category="treatment",
+                        treatment_name=arguments.get("treatment_name"),
+                        dentist_name=arguments.get("dentist_name"),
+                        treatment_date=arguments.get("treatment_date")
+                    )
+                    if r["status"] == "SAVED":
+                        result = {
+                            "status":  "SAVED",
+                            "message": f"Treatment complaint recorded. Team contacts {first_name} in 2 business days."
+                        }
+                    else:
+                        result = {"status": "ERROR", "message": r.get("message", "Could not save.")}
+
             else:
-                p          = session["patient_data"]
-                first_name = p["first_name"]
-                last_name  = p["last_name"]
+                # General complaints — use whatever name the caller gave, no verification needed
+                caller_name = (
+                    arguments.get("patient_name")
+                    or (session["patient_data"]["first_name"] if session.get("verified") and session.get("patient_data") else None)
+                    or "Anonymous"
+                )
                 r = save_complaint(
-                    patient_name=f"{first_name} {last_name}",
-                    contact_number=p["contact_number"],
+                    patient_name=caller_name,
+                    contact_number="",          # not collected for general complaints
                     complaint_text=arguments.get("complaint_text", ""),
-                    complaint_category=arguments.get("complaint_category", "general"),
-                    treatment_name=arguments.get("treatment_name"),
-                    dentist_name=arguments.get("dentist_name"),
-                    treatment_date=arguments.get("treatment_date")
+                    complaint_category="general",
+                    treatment_name=None,
+                    dentist_name=None,
+                    treatment_date=None
                 )
                 if r["status"] == "SAVED":
                     result = {
                         "status":  "SAVED",
-                        "message": f"Complaint recorded. Team contacts {first_name} in 2 business days."
+                        "message": "General complaint recorded. Our team will review and follow up within 2 business days."
                     }
                 else:
                     result = {"status": "ERROR", "message": r.get("message", "Could not save.")}
@@ -836,7 +907,6 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
         print("=========================================")
         result = {"status": "ERROR", "message": str(e)}
 
-    # ✅ FIX: disarm via passed-in function — works across scope boundary (no NameError)
     if disarm_fn:
         disarm_fn()
 
@@ -865,11 +935,7 @@ async def voice(request: Request):
 
 # ---------------------------------------------------------------------------
 # MAIN WEBSOCKET
-# Each call gets completely isolated state via make_new_session()
-# No module-level globals for barge-in or audio — concurrent calls are safe
 # ---------------------------------------------------------------------------
-
-import websockets
 
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
@@ -879,12 +945,11 @@ async def handle_media_stream(websocket: WebSocket):
     print("=" * 70)
     await websocket.accept()
 
-    call_sid   = None
-    stream_sid = None
-    session    = None
-    openai_ws  = None
-
-    call_active = {"running": True}
+    call_sid    = None
+    stream_sid  = None
+    session     = None
+    openai_ws   = None
+    call_active = {"running": True}   # ✅ used by keep_alive to stop after call ends
 
     try:
         openai_ws = await websockets.connect(
@@ -900,20 +965,17 @@ async def handle_media_stream(websocket: WebSocket):
         await websocket.close()
         return
 
-    
-
     async def receive_from_openai():
         nonlocal session
         pending_fn      = None
         pending_call_id = None
         pending_args    = ""
 
-        # ✅ FIX: watchdog uses dict to avoid NameError across closure scope
         wd = {"task": None, "armed": False}
 
         async def watchdog():
             await asyncio.sleep(1.5)
-            if not wd["armed"]:                      # ✅ was bare wd_armed — NameError
+            if not wd["armed"]:
                 return
             if session and session.get("is_speaking"):
                 return
@@ -922,7 +984,7 @@ async def handle_media_stream(websocket: WebSocket):
                 await safe_openai_send(openai_ws, {"type": "response.create"})
             except Exception as e:
                 print(f"[WATCHDOG ERROR] {e}")
-            wd["armed"] = False                      # ✅ was bare wd_armed — NameError
+            wd["armed"] = False
 
         def arm_watchdog():
             if wd["task"] and not wd["task"].done():
@@ -949,7 +1011,7 @@ async def handle_media_stream(websocket: WebSocket):
 
                     if event_type == "session.updated":
                         if session and not session.get("greeting_sent"):
-                            session["greeting_sent"] = True    # ✅ set BEFORE send — prevents race condition
+                            session["greeting_sent"] = True
                             await safe_openai_send(openai_ws, {
                                 "type": "conversation.item.create",
                                 "item": {
@@ -975,7 +1037,6 @@ async def handle_media_stream(websocket: WebSocket):
                                 session["audio_queue"].append(data["delta"])
                                 if session["audio_start_time"] is None:
                                     session["audio_start_time"] = time.time()
-                            print("[BOT] Speaking...")
                             await websocket.send_json({
                                 "event":     "media",
                                 "streamSid": stream_sid,
@@ -989,7 +1050,6 @@ async def handle_media_stream(websocket: WebSocket):
                             session["audio_start_time"] = None
                             session["elapsed_ms"]       = 0
                         print("[BOT] Done speaking")
-                        # ✅ Clear buffer so bot doesn't hear its own voice
                         try:
                             await safe_openai_send(openai_ws, {"type": "input_audio_buffer.clear"})
                         except Exception:
@@ -999,12 +1059,11 @@ async def handle_media_stream(websocket: WebSocket):
                         if session:
                             session["current_response_id"] = data.get("response", {}).get("id")
 
-                    # ✅ response.done — DO NOTHING, intentionally empty
                     elif event_type == "response.done":
-                        pass
+                        pass   # intentionally empty
 
                     elif event_type == "input_audio_buffer.speech_started":
-                        # ✅ Only cancel if bot is actually speaking right now
+                        # ✅ FIX 14: Only barge-in if bot is actually speaking
                         if session and session.get("is_speaking"):
                             print("[BARGE-IN] User interrupted — stopping bot")
                             if session["audio_start_time"] is not None:
@@ -1033,15 +1092,12 @@ async def handle_media_stream(websocket: WebSocket):
                             session["elapsed_ms"]             = 0
                             session["is_speaking"]            = False
                         else:
-                            # ✅ Bot not speaking — user just started talking normally, do nothing
                             print("[USER] Speaking (no barge-in needed)")
-
 
                     elif event_type == "input_audio_buffer.speech_stopped":
                         if session:
                             session["interruption_pending"] = False
 
-                    # ✅ input_audio_buffer.cleared — DO NOTHING, not a close signal
                     elif event_type == "input_audio_buffer.cleared":
                         pass
 
@@ -1062,8 +1118,6 @@ async def handle_media_stream(websocket: WebSocket):
                         except json.JSONDecodeError:
                             args = {}
                         if fn:
-                            # ✅ FIX: pass disarm_watchdog so it can cancel the timer inside function scope
-                            # ✅ FIX: removed arm_watchdog() after — function already sends response.create
                             await handle_function_call(fn, args, cid, session, openai_ws, disarm_watchdog)
                         pending_fn = pending_call_id = None
                         pending_args = ""
@@ -1085,10 +1139,9 @@ async def handle_media_stream(websocket: WebSocket):
                         print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}", flush=True)
 
                 except Exception as inner_e:
-                    # ✅ FIX: log bad event but keep loop running — call stays alive
                     print(f"[LOOP ERROR] Failed handling '{event_type}': {inner_e}")
                     traceback.print_exc()
-                    continue   # ✅ never break — keeps call alive
+                    continue
 
         except websockets.exceptions.ConnectionClosed as e:
             print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}", flush=True)
@@ -1121,19 +1174,20 @@ async def handle_media_stream(websocket: WebSocket):
 
                 elif event_type == "stop":
                     print("[Twilio] Call ended by Twilio")
+                    call_active["running"] = False   # ✅ STOP keep_alive immediately
                     if openai_ws:
                         try:
                             await openai_ws.close()
                         except Exception:
                             pass
-                    break   # ✅ Only break on explicit stop — not on any other event
+                    break
 
                 else:
-                    # ✅ FIX: unknown Twilio events are ignored — call stays alive
                     print(f"[Twilio] Unknown event ignored: {event_type}")
 
         except WebSocketDisconnect:
             print("[Twilio] Caller disconnected")
+            call_active["running"] = False   # ✅ STOP keep_alive immediately
             if openai_ws:
                 try:
                     await openai_ws.close()
@@ -1144,16 +1198,20 @@ async def handle_media_stream(websocket: WebSocket):
             traceback.print_exc()
 
     async def keep_alive():
+        """
+        ✅ FIX 13: Sends silent session.update ping every 25s — no empty audio errors.
+        ✅ FIX 15: Respects call_active flag — stops immediately when call ends.
+        """
         try:
             while call_active["running"]:
-                await asyncio.sleep(20)  # slightly faster than Twilio idle timeout
-
+                if websocket.client_state.name != "CONNECTED":
+                    print("[KEEPALIVE] Twilio WS closed – stopping keepalive")
+                    break
+                await asyncio.sleep(25)
                 if not call_active["running"]:
                     break
-
                 if not openai_ws:
                     continue
-
                 try:
                     await safe_openai_send(openai_ws, {
                         "type": "session.update",
@@ -1167,37 +1225,29 @@ async def handle_media_stream(websocket: WebSocket):
                         }
                     })
                     print("[KEEPALIVE] Ping sent")
-
                 except websockets.exceptions.ConnectionClosed:
-                    print("[KEEPALIVE] OpenAI WS already closed – stopping keepalive")
+                    print("[KEEPALIVE] OpenAI WS already closed — stopping")
                     break
-
                 except Exception as e:
                     print("[KEEPALIVE ERROR]", e)
                     break
-
         except asyncio.CancelledError:
             print("[KEEPALIVE] cancelled")
 
-
-
     try:
-        # ✅ FIX: 3 tasks running together — keep_alive() prevents mid-call disconnects
         tasks = [
             asyncio.create_task(receive_from_twilio()),
             asyncio.create_task(receive_from_openai()),
             asyncio.create_task(keep_alive())
         ]
-
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-
         for task in pending:
             task.cancel()
     except Exception as e:
         print(f"[HANDLER ERROR] {e}")
         traceback.print_exc()
     finally:
-        call_active["running"] = False  
+        call_active["running"] = False   # ✅ stops keep_alive immediately
         print("[CALL END] Cleaning up...")
         if session:
             last = session["conversation_history"][-1]["content"] if session["conversation_history"] else "none"
@@ -1230,7 +1280,7 @@ if __name__ == "__main__":
     print(f"  Voice    : {VOICE}")
     print(f"  Audio    : g711_ulaw passthrough")
     print(f"  VAD      : threshold={VAD_THRESHOLD}  silence={SILENCE_DURATION_MS}ms")
-    print(f"  Fixes    : per-call isolation | barge-in | no false disconnects | keep-alive")
+    print(f"  Fixes    : complaint two-path | keep-alive | barge-in guard | per-call isolation")
     print("=" * 70)
     uvicorn.run(
         "main:app",

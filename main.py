@@ -871,6 +871,8 @@ async def handle_media_stream(websocket: WebSocket):
     session    = None
     openai_ws  = None
 
+    call_active = {"running": True}
+
     try:
         openai_ws = await websockets.connect(
             OPENAI_REALTIME_URL,
@@ -987,27 +989,38 @@ async def handle_media_stream(websocket: WebSocket):
                         pass
 
                     elif event_type == "input_audio_buffer.speech_started":
-                        print("[BARGE-IN] User interrupted — stopping bot")
-                        if session:
+                        # ✅ Only cancel if bot is actually speaking right now
+                        if session and session.get("is_speaking"):
+                            print("[BARGE-IN] User interrupted — stopping bot")
                             if session["audio_start_time"] is not None:
                                 session["elapsed_ms"] = int(
                                     (time.time() - session["audio_start_time"]) * 1000
                                 )
                             else:
                                 session["elapsed_ms"] = 0
-                            await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                            try:
+                                await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                            except Exception:
+                                pass
                             if session["last_assistant_item_id"]:
-                                await openai_ws.send(json.dumps({
-                                    "type":          "conversation.item.truncate",
-                                    "item_id":       session["last_assistant_item_id"],
-                                    "content_index": 0,
-                                    "audio_end_ms":  session["elapsed_ms"]
-                                }))
+                                try:
+                                    await openai_ws.send(json.dumps({
+                                        "type":          "conversation.item.truncate",
+                                        "item_id":       session["last_assistant_item_id"],
+                                        "content_index": 0,
+                                        "audio_end_ms":  session["elapsed_ms"]
+                                    }))
+                                except Exception:
+                                    pass
                             session["audio_queue"].clear()
                             session["last_assistant_item_id"] = None
                             session["audio_start_time"]       = None
                             session["elapsed_ms"]             = 0
                             session["is_speaking"]            = False
+                        else:
+                            # ✅ Bot not speaking — user just started talking normally, do nothing
+                            print("[USER] Speaking (no barge-in needed)")
+
 
                     elif event_type == "input_audio_buffer.speech_stopped":
                         if session:
@@ -1113,27 +1126,29 @@ async def handle_media_stream(websocket: WebSocket):
             traceback.print_exc()
 
     async def keep_alive():
-        """
-        ✅ FIX: Prevents Twilio 60s inactivity timeout mid-conversation.
-        Sends a silent ping to OpenAI every 20 seconds during silence gaps.
-        """
         try:
-            while True:
-                await asyncio.sleep(20)
-                if openai_ws:
+            while call_active["running"]:
+                await asyncio.sleep(25)
+                if not call_active["running"]:
+                    break
+                if openai_ws and not openai_ws.closed:
                     try:
-                        # Send empty buffer append — keeps both connections alive
                         await openai_ws.send(json.dumps({
-                            "type":  "input_audio_buffer.append",
-                            "audio": ""
+                            "type": "session.update",
+                            "session": {"turn_detection": {
+                                "type":                "server_vad",
+                                "threshold":           VAD_THRESHOLD,
+                                "prefix_padding_ms":   PREFIX_PADDING_MS,
+                                "silence_duration_ms": SILENCE_DURATION_MS
+                            }}
                         }))
                         print("[KEEPALIVE] Ping sent")
                     except Exception:
-                        break   # OpenAI WS closed — exit silently
+                        break
         except asyncio.CancelledError:
             pass
-        except Exception:
-            pass
+
+
 
     try:
         # ✅ FIX: 3 tasks running together — keep_alive() prevents mid-call disconnects
@@ -1146,6 +1161,7 @@ async def handle_media_stream(websocket: WebSocket):
         print(f"[HANDLER ERROR] {e}")
         traceback.print_exc()
     finally:
+        call_active["running"] = False  
         print("[CALL END] Cleaning up...")
         if session:
             last = session["conversation_history"][-1]["content"] if session["conversation_history"] else "none"

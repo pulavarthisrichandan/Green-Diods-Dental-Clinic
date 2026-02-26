@@ -937,7 +937,7 @@ async def handle_media_stream(websocket: WebSocket):
             wd["task"]  = None
 
         try:
-            await safe_openai_send(get_session_config())
+            await safe_openai_send(openai_ws, get_session_config())
             print("[OpenAI] Session config sent", flush=True)
 
             async for message in openai_ws:
@@ -1122,7 +1122,10 @@ async def handle_media_stream(websocket: WebSocket):
                 elif event_type == "stop":
                     print("[Twilio] Call ended by Twilio")
                     if openai_ws:
-                        await openai_ws.close()
+                        try:
+                            await openai_ws.close()
+                        except Exception:
+                            pass
                     break   # ✅ Only break on explicit stop — not on any other event
 
                 else:

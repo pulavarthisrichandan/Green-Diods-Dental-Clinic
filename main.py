@@ -1131,7 +1131,7 @@ async def handle_media_stream(websocket: WebSocket):
                 await asyncio.sleep(25)
                 if not call_active["running"]:
                     break
-                if openai_ws and not openai_ws.closed:
+                if openai_ws and openai_ws.open:
                     try:
                         await openai_ws.send(json.dumps({
                             "type": "session.update",

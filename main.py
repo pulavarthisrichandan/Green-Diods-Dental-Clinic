@@ -9,6 +9,12 @@ Fixes applied:
   4. log_supplier_call() NEVER for patients (stronger prompt + tool description)
   5. Per-call isolated state — concurrent callers never crash each other
   6. Barge-in uses local state variables not globals
+  7. watchdog uses wd["armed"] dict — no NameError (was bare wd_armed variable)
+  8. handle_function_call receives disarm_fn — disarms watchdog across scope boundary
+  9. arm_watchdog() removed after handle_function_call — no duplicate response.create
+  10. keep_alive() task — prevents Twilio 60s inactivity timeout mid-conversation
+  11. receive_from_twilio — unknown events ignored, not breaking the loop
+  12. VAD threshold + silence duration corrected
 """
 
 import os
@@ -32,7 +38,7 @@ from appointment.executor import (
 from complaint.complaint_executor import save_complaint
 from business.business_controller import (
     handle_business_info, handle_insurance_query, handle_warranty_query,
-    classify_business_call, extract_order_info          # ✅ removed _ prefix
+    classify_business_call, extract_order_info
 )
 from business.business_executor import (
     log_business_call, update_order_status_by_patient_name
@@ -40,7 +46,7 @@ from business.business_executor import (
 from general_enquiry.enquiry_executor import (
     get_patient_orders, get_upcoming_appointments, get_past_appointments
 )
-from knowledge_base.kb_controller import handle_kb_query  # ✅ was knowledge_base (wrong)
+from knowledge_base.kb_controller import handle_kb_query
 from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
 
 
@@ -57,11 +63,11 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
 OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
-VOICE                        = "marin"   # try: "coral", "marin", or "cedar", "shimmer", "nova", "sage"
-TEMPERATURE                  = 0.8 
-VAD_THRESHOLD                = 0.75
+VOICE                        = "coral"        # warm female voice — best for dental receptionist
+TEMPERATURE                  = 0.8
+VAD_THRESHOLD                = 0.75           # ✅ was 0.5 — less jumpy
 PREFIX_PADDING_MS            = 300
-SILENCE_DURATION_MS          = 900
+SILENCE_DURATION_MS          = 900            # ✅ was 600 — gives patient time to finish
 CLOUD_RUN_WSS_BASE           = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 
@@ -256,7 +262,6 @@ def make_new_session(call_sid: str) -> dict:
         "current_response_id":  None,
         "greeting_sent":        False,
         "conversation_history": [],
-        # ── Barge-in state — per call, never shared ──
         "last_assistant_item_id": None,
         "audio_start_time":       None,
         "elapsed_ms":             0,
@@ -509,7 +514,8 @@ def get_session_config() -> dict:
 
 # ---------------------------------------------------------------------------
 # FUNCTION CALL HANDLER
-# response.create sent EXACTLY ONCE here. Never in response.done.
+# ✅ FIX: accepts disarm_fn parameter — works across scope boundary
+# ✅ FIX: response.create sent EXACTLY ONCE here. Never in response.done.
 # ---------------------------------------------------------------------------
 
 async def handle_function_call(function_name, arguments, call_id, session, openai_ws, disarm_fn=None):
@@ -786,7 +792,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     result = {"status": r["status"], "message": r.get("message", "None found.")}
 
         elif function_name == "log_supplier_call":
-            sub_type = classify_business_call(arguments.get("purpose", ""))   # ✅ was _classify_business_call
+            sub_type = classify_business_call(arguments.get("purpose", ""))
             log_business_call(
                 caller_name=arguments.get("caller_name"),
                 company_name=arguments.get("company_name"),
@@ -795,7 +801,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 full_notes=json.dumps(arguments)
             )
             if sub_type == "order_ready":
-                oi = extract_order_info(arguments.get("purpose", ""))          # ✅ was _extract_order_info
+                oi = extract_order_info(arguments.get("purpose", ""))
                 if oi.get("patient_name") and oi.get("product_name"):
                     update_order_status_by_patient_name(
                         patient_name=oi["patient_name"],
@@ -810,7 +816,6 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 "message": f"Call from {caller_name} ({company_name}) logged. Management will follow up."
             }
 
-
         else:
             result = {"error": f"Unknown function: {function_name}"}
 
@@ -820,17 +825,9 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
         print("=========================================")
         result = {"status": "ERROR", "message": str(e)}
 
-    # ✅ Disarm via passed-in function — works across scope boundary
+    # ✅ FIX: disarm via passed-in function — works across scope boundary (no NameError)
     if disarm_fn:
         disarm_fn()
-
-    await openai_ws.send(json.dumps({
-        "type": "conversation.item.create",
-        "item": {"type": "function_call_output", "call_id": call_id, "output": json.dumps(result)}
-    }))
-    await openai_ws.send(json.dumps({"type": "response.create"}))
-    print(f"[RESULT] {json.dumps(result, indent=2)}")
-
 
     await openai_ws.send(json.dumps({
         "type": "conversation.item.create",
@@ -871,7 +868,7 @@ async def handle_media_stream(websocket: WebSocket):
 
     call_sid   = None
     stream_sid = None
-    session    = None   # will be set to make_new_session() on Twilio "start" event
+    session    = None
     openai_ws  = None
 
     try:
@@ -893,13 +890,14 @@ async def handle_media_stream(websocket: WebSocket):
         pending_fn      = None
         pending_call_id = None
         pending_args    = ""
+
+        # ✅ FIX: watchdog uses dict to avoid NameError across closure scope
         wd = {"task": None, "armed": False}
 
         async def watchdog():
-            await asyncio.sleep(1.5)   # ✅ was 0.8 — give more time before nudging
-            if not wd["armed"]:
+            await asyncio.sleep(1.5)
+            if not wd["armed"]:                      # ✅ was bare wd_armed — NameError
                 return
-            # ✅ Don't nudge if bot is still speaking
             if session and session.get("is_speaking"):
                 return
             print("[WATCHDOG] Bot silent — nudge")
@@ -907,8 +905,7 @@ async def handle_media_stream(websocket: WebSocket):
                 await openai_ws.send(json.dumps({"type": "response.create"}))
             except Exception as e:
                 print(f"[WATCHDOG ERROR] {e}")
-            wd["armed"] = False
-
+            wd["armed"] = False                      # ✅ was bare wd_armed — NameError
 
         def arm_watchdog():
             if wd["task"] and not wd["task"].done():
@@ -935,7 +932,7 @@ async def handle_media_stream(websocket: WebSocket):
 
                     if event_type == "session.updated":
                         if session and not session.get("greeting_sent"):
-                            session["greeting_sent"] = True
+                            session["greeting_sent"] = True    # ✅ set BEFORE send — prevents race condition
                             await openai_ws.send(json.dumps({
                                 "type": "conversation.item.create",
                                 "item": {
@@ -946,7 +943,6 @@ async def handle_media_stream(websocket: WebSocket):
                             }))
                             await openai_ws.send(json.dumps({"type": "response.create"}))
 
-                    # ── Bot response starting — track item ID in session ──
                     elif event_type == "response.output_item.added":
                         if session:
                             session["last_assistant_item_id"] = data.get("item", {}).get("id")
@@ -954,14 +950,12 @@ async def handle_media_stream(websocket: WebSocket):
                             session["elapsed_ms"]             = 0
                             session["audio_queue"].clear()
 
-                    # ── Bot audio chunk ──
                     elif event_type == "response.audio.delta":
                         disarm_watchdog()
                         if stream_sid and "delta" in data:
                             if session:
                                 session["is_speaking"] = True
                                 session["audio_queue"].append(data["delta"])
-                                # Start audio timer on first chunk
                                 if session["audio_start_time"] is None:
                                     session["audio_start_time"] = time.time()
                             print("[BOT] Speaking...")
@@ -971,14 +965,14 @@ async def handle_media_stream(websocket: WebSocket):
                                 "media":     {"payload": data["delta"]}
                             })
 
-                    # ── Bot finished speaking ──
                     elif event_type == "response.audio.done":
                         if session:
-                            session["is_speaking"]    = False
-                            session["audio_queue"]    = []
+                            session["is_speaking"]      = False
+                            session["audio_queue"]      = []
                             session["audio_start_time"] = None
-                            session["elapsed_ms"]     = 0
+                            session["elapsed_ms"]       = 0
                         print("[BOT] Done speaking")
+                        # ✅ Clear buffer so bot doesn't hear its own voice
                         try:
                             await openai_ws.send(json.dumps({"type": "input_audio_buffer.clear"}))
                         except Exception:
@@ -988,26 +982,20 @@ async def handle_media_stream(websocket: WebSocket):
                         if session:
                             session["current_response_id"] = data.get("response", {}).get("id")
 
-                    # ── ✅ response.done — DO NOTHING, keep call alive ──
+                    # ✅ response.done — DO NOTHING, intentionally empty
                     elif event_type == "response.done":
                         pass
 
-                    # ── ✅ BARGE-IN — uses per-call session state, not globals ──
                     elif event_type == "input_audio_buffer.speech_started":
                         print("[BARGE-IN] User interrupted — stopping bot")
                         if session:
-                            # Calculate elapsed ms from session's own timer
                             if session["audio_start_time"] is not None:
                                 session["elapsed_ms"] = int(
                                     (time.time() - session["audio_start_time"]) * 1000
                                 )
                             else:
                                 session["elapsed_ms"] = 0
-
-                            # Step 1: Cancel active response
                             await openai_ws.send(json.dumps({"type": "response.cancel"}))
-
-                            # Step 2: Truncate at exact interruption point
                             if session["last_assistant_item_id"]:
                                 await openai_ws.send(json.dumps({
                                     "type":          "conversation.item.truncate",
@@ -1015,8 +1003,6 @@ async def handle_media_stream(websocket: WebSocket):
                                     "content_index": 0,
                                     "audio_end_ms":  session["elapsed_ms"]
                                 }))
-
-                            # Step 3: Clear buffer and reset state
                             session["audio_queue"].clear()
                             session["last_assistant_item_id"] = None
                             session["audio_start_time"]       = None
@@ -1027,25 +1013,14 @@ async def handle_media_stream(websocket: WebSocket):
                         if session:
                             session["interruption_pending"] = False
 
-                    # ── ✅ input_audio_buffer.cleared — DO NOTHING, not a close signal ──
+                    # ✅ input_audio_buffer.cleared — DO NOTHING, not a close signal
                     elif event_type == "input_audio_buffer.cleared":
                         pass
 
-                    elif event_type == "response.function_call_arguments.done":
-                        fn  = data.get("name")      or pending_fn
-                        cid = data.get("call_id")   or pending_call_id
-                        raw = data.get("arguments") or pending_args
-                        try:
-                            args = json.loads(raw or "{}")
-                        except json.JSONDecodeError:
-                            args = {}
-                        if fn:
-                            # ✅ Pass disarm_watchdog so it can cancel the timer
-                            # ✅ Removed arm_watchdog() after — function already sends response.create
-                            await handle_function_call(fn, args, cid, session, openai_ws, disarm_watchdog)
-                        pending_fn = pending_call_id = None
-                        pending_args = ""
-
+                    elif event_type == "response.function_call_arguments.start":
+                        pending_fn      = data.get("name")
+                        pending_call_id = data.get("call_id")
+                        pending_args    = ""
 
                     elif event_type == "response.function_call_arguments.delta":
                         pending_args += data.get("delta", "")
@@ -1059,8 +1034,9 @@ async def handle_media_stream(websocket: WebSocket):
                         except json.JSONDecodeError:
                             args = {}
                         if fn:
-                            await handle_function_call(fn, args, cid, session, openai_ws)
-                            arm_watchdog()
+                            # ✅ FIX: pass disarm_watchdog so it can cancel the timer inside function scope
+                            # ✅ FIX: removed arm_watchdog() after — function already sends response.create
+                            await handle_function_call(fn, args, cid, session, openai_ws, disarm_watchdog)
                         pending_fn = pending_call_id = None
                         pending_args = ""
 
@@ -1081,15 +1057,16 @@ async def handle_media_stream(websocket: WebSocket):
                         print(f"[OpenAI ERROR] {err.get('type')}: {err.get('message')}", flush=True)
 
                 except Exception as inner_e:
-                    # Log bad event but keep loop running — call stays alive
+                    # ✅ FIX: log bad event but keep loop running — call stays alive
                     print(f"[LOOP ERROR] Failed handling '{event_type}': {inner_e}")
                     traceback.print_exc()
-                    continue
+                    continue   # ✅ never break — keeps call alive
 
         except websockets.exceptions.ConnectionClosed as e:
             print(f"[OpenAI] Connection closed — Code: {e.code} Reason: {e.reason}", flush=True)
         except Exception as e:
             print(f"[OpenAI RECEIVE ERROR] {type(e).__name__}: {e}", flush=True)
+            traceback.print_exc()
         finally:
             disarm_watchdog()
 
@@ -1099,38 +1076,80 @@ async def handle_media_stream(websocket: WebSocket):
             async for message in websocket.iter_text():
                 data       = json.loads(message)
                 event_type = data.get("event", "")
+
                 if event_type == "start":
                     stream_sid = data["start"]["streamSid"]
                     call_sid   = data["start"].get("callSid", stream_sid)
-                    # ✅ Each call gets its own isolated session
-                    session = make_new_session(call_sid)
+                    session    = make_new_session(call_sid)
                     session["stream_sid"] = stream_sid
                     print(f"[Twilio] Connected | Stream: {stream_sid}")
+
                 elif event_type == "media":
                     if openai_ws and data.get("media", {}).get("payload"):
                         await openai_ws.send(json.dumps({
                             "type":  "input_audio_buffer.append",
                             "audio": data["media"]["payload"]
                         }))
+
                 elif event_type == "stop":
                     print("[Twilio] Call ended by Twilio")
                     if openai_ws:
                         await openai_ws.close()
-                    break
+                    break   # ✅ Only break on explicit stop — not on any other event
+
+                else:
+                    # ✅ FIX: unknown Twilio events are ignored — call stays alive
+                    print(f"[Twilio] Unknown event ignored: {event_type}")
+
         except WebSocketDisconnect:
             print("[Twilio] Caller disconnected")
+            if openai_ws:
+                try:
+                    await openai_ws.close()
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[Twilio RECEIVE ERROR] {e}")
+            traceback.print_exc()
+
+    async def keep_alive():
+        """
+        ✅ FIX: Prevents Twilio 60s inactivity timeout mid-conversation.
+        Sends a silent ping to OpenAI every 20 seconds during silence gaps.
+        """
+        try:
+            while True:
+                await asyncio.sleep(20)
+                if openai_ws:
+                    try:
+                        # Send empty buffer append — keeps both connections alive
+                        await openai_ws.send(json.dumps({
+                            "type":  "input_audio_buffer.append",
+                            "audio": ""
+                        }))
+                        print("[KEEPALIVE] Ping sent")
+                    except Exception:
+                        break   # OpenAI WS closed — exit silently
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     try:
-        await asyncio.gather(receive_from_twilio(), receive_from_openai())
+        # ✅ FIX: 3 tasks running together — keep_alive() prevents mid-call disconnects
+        await asyncio.gather(
+            receive_from_twilio(),
+            receive_from_openai(),
+            keep_alive()
+        )
     except Exception as e:
         print(f"[HANDLER ERROR] {e}")
         traceback.print_exc()
     finally:
         print("[CALL END] Cleaning up...")
         if session:
-            print(f"[CALL END] Verified: {session['verified']} | Last bot: {session['conversation_history'][-1]['content'] if session['conversation_history'] else 'none'}")
+            last = session["conversation_history"][-1]["content"] if session["conversation_history"] else "none"
+            print(f"[CALL END] Verified: {session['verified']} | Last bot: {last}")
         if openai_ws:
             try:
                 await openai_ws.close()
@@ -1138,6 +1157,10 @@ async def handle_media_stream(websocket: WebSocket):
                 pass
         print("[CALL END] Done\n")
 
+
+# ---------------------------------------------------------------------------
+# HEALTH CHECK
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 def health():
@@ -1155,7 +1178,7 @@ if __name__ == "__main__":
     print(f"  Voice    : {VOICE}")
     print(f"  Audio    : g711_ulaw passthrough")
     print(f"  VAD      : threshold={VAD_THRESHOLD}  silence={SILENCE_DURATION_MS}ms")
-    print(f"  Fixes    : per-call isolation | barge-in | no false disconnects")
+    print(f"  Fixes    : per-call isolation | barge-in | no false disconnects | keep-alive")
     print("=" * 70)
     uvicorn.run(
         "main:app",

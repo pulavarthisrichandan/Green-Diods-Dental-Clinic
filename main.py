@@ -56,7 +56,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
+OPENAI_REALTIME_URL          = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
 VOICE                        = "marin"   # try: "coral", "marin", or "cedar", "shimmer", "nova", "sage"
 TEMPERATURE                  = 0.8 
 VAD_THRESHOLD                = 0.75

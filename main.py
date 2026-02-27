@@ -2650,7 +2650,14 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                  "call_id": call_id,
                  "output": json.dumps(result)}
     })
-    await safe_openai_send(openai_ws, {"type": "response.create"})
+    await safe_openai_send(openai_ws, 
+                           {
+                                "type": "response.create",
+                                "response": {
+                                    "modalities": ["audio"],
+                                    "voice": VOICE
+                                }
+                            })
     print(f"[RESULT] {json.dumps(result, indent=2)}")
 
 
@@ -2719,7 +2726,14 @@ async def handle_media_stream(websocket: WebSocket):
                 return
             print("[WATCHDOG] Bot silent — nudge")
             try:
-                await safe_openai_send(openai_ws, {"type": "response.create"})
+                await safe_openai_send(openai_ws, 
+                           {
+                                "type": "response.create",
+                                "response": {
+                                    "modalities": ["audio"],
+                                    "voice": VOICE
+                                }
+                            })
             except Exception as e:
                 print(f"[WATCHDOG ERROR] {e}")
             wd["armed"] = False

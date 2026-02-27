@@ -148,14 +148,25 @@ SYSTEM_INSTRUCTIONS = (
     "Only ask 'Are you an existing or new patient?' when intent is BOOK, UPDATE, or CANCEL.\n"
     "Do NOT ask for general questions about address, hours, pricing, insurance.\n\n"
 
-    "STEP 0 — MANDATORY FIRST QUESTION (with one exception):\n"
-    " Always ask: 'Are you an existing patient with us, or is this your first visit?'\n"
-    " -> EXISTING -> EXISTING PATIENT FLOW\n"
-    " -> NEW      -> NEW PATIENT FLOW\n"
-    " -> UNSURE   -> 'Have you visited us before?'\n"
-    " EXCEPTION — UPDATE or CANCEL: skip Step 0 entirely.\n"
-    "   Only existing patients have appointments.\n"
-    "   Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify).\n\n"
+    "VERIFICATION RULE:\n"
+    "Only ask whether the caller is an existing or new patient\n"
+    "IF AND ONLY IF the user intent is:\n"
+    "- Book appointment\n"
+    "- Treatment-related complaint\n"
+    "- Order status\n\n"
+
+    "For general enquiries (hours, pricing, insurance, address, procedures),"
+    "DO NOT ask verification or patient type."
+
+    "STEP 0 — MANDATORY FIRST QUESTION (with one exception):"
+    "Always ask: 'Are you an existing patient with us, or is this your first visit?'"
+    "-> EXISTING -> EXISTING PATIENT FLOW"
+    "-> NEW      -> NEW PATIENT FLOW"
+    "-> UNSURE   -> 'Have you visited us before?'"
+    "EXCEPTION — UPDATE or CANCEL: skip Step 0 entirely."
+    "Only existing patients have appointments."
+    "Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify)."
+    
 
     "EXISTING PATIENT FLOW:\n"
     "  Step 1: Ask last name\n"
@@ -192,6 +203,15 @@ SYSTEM_INSTRUCTIONS = (
     "6. NEVER say 'schedule a consultation'\n"
     "7. Phone readback ALWAYS digit by digit\n"
     "8. NEVER ask repeated questions — if info already given, use it\n\n"
+
+    # ── TREATMENT INFORMATION RULES ──────────────────────────────────────────
+    "TREATMENT INFORMATION RULE:\n"
+    "Only describe treatments exactly as listed in SERVICES.\n"
+    "Never suggest consultation.\n"
+    "Never suggest additional treatments beyond what the user asked.\n"
+    "If user asks about a treatment not listed, say:\n"
+    "I'm sorry, we don't currently offer that treatment."
+    "Never invent treatments.\n"
 
     "CLINIC DETAILS (from memory, no function call):\n"
     "- Address: 123, Building, Melbourne Central, Melbourne, Victoria\n"
@@ -275,6 +295,9 @@ SYSTEM_INSTRUCTIONS = (
     "  - TYPE 2: must verify before filing\n"
     "  - NEVER mention complaint ID\n"
     "  - Always empathy BEFORE any question\n\n"
+
+    "CRITICAL:\n"
+    "Never ask verification before determining whether complaint is general or treatment-related."
 
     # ── BUSINESS / SUPPLIER CALLS ─────────────────────────────────────────────
     "BUSINESS CALL ROUTING — THREE TYPES:\n"
@@ -942,8 +965,15 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             result = {"status": r.get("status", "SUCCESS"), "response": r.get("response", "")}
 
         elif function_name == "answer_dental_question":
-            r = handle_kb_query(user_input=arguments.get("query", ""), session=session)
-            result = {"status": r.get("source", "kb"), "response": r.get("response", "")}
+            query = arguments.get("query", "")
+            r = handle_kb_query(user_input=query, session=session)
+
+            # Hard restriction: never allow consultation suggestion
+            response_text = r.get("response", "")
+            if "consultation" in response_text.lower():
+                response_text = response_text.replace("consultation", "")
+
+            result = {"status": r.get("source", "kb"), "response": response_text}
 
         elif function_name == "get_my_order_status":
             if not session.get("verified"):
@@ -1149,7 +1179,8 @@ async def handle_media_stream(websocket: WebSocket):
                 return
             print("[WATCHDOG] Bot silent — nudge")
             try:
-                await safe_openai_send(openai_ws, {"type": "response.create"})
+                if not session.get("is_speaking"):
+                    await safe_openai_send(openai_ws, {"type": "response.create"})
             except Exception as e:
                 print(f"[WATCHDOG ERROR] {e}")
             wd["armed"] = False
@@ -1177,7 +1208,7 @@ async def handle_media_stream(websocket: WebSocket):
 
                 try:
                     if event_type == "session.updated":
-                        if session and not session.get("greeting_sent"):
+                        if session and not session.get("greeting_sent") and not session.get("verified"):
                             session["greeting_sent"] = True
                             await safe_openai_send(openai_ws, {
                                 "type": "conversation.item.create",
@@ -1230,6 +1261,14 @@ async def handle_media_stream(websocket: WebSocket):
                         pass  # intentionally empty
 
                     elif event_type == "input_audio_buffer.speech_started":
+                        # Immediately stop sending audio to Twilio
+                        try:
+                            await websocket.send_json({
+                                "event": "clear",
+                                "streamSid": stream_sid
+                            })
+                        except Exception:
+                            pass
                         if session and session.get("is_speaking"):
                             print("[BARGE-IN] User interrupted — stopping bot")
                             if session["audio_start_time"] is not None:

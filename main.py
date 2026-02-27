@@ -1957,14 +1957,12 @@ def get_session_config() -> dict:
     return {
         "type": "session.update",
         "session": {
-            "modalities": ["audio", "text"],   # REQUIRED
+            "modalities": ["audio", "text"],
             "instructions": SYSTEM_INSTRUCTIONS,
             "voice": VOICE,
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
-            "response_format": {
-                "type": "audio"     # 🔥 THIS IS THE KEY
-            },
+            "input_audio_transcription": {"model": "whisper-1"},  # ⚠️ also re-add this (see below)
             "turn_detection": {
                 "type": "server_vad",
                 "threshold": VAD_THRESHOLD,

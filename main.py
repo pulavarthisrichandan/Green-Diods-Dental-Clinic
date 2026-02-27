@@ -1957,20 +1957,20 @@ def get_session_config() -> dict:
     return {
         "type": "session.update",
         "session": {
-            "modalities":                ["text", "audio"],
-            "instructions":              SYSTEM_INSTRUCTIONS,
-            "voice":                     VOICE,
-            "input_audio_format":        "g711_ulaw",
-            "output_audio_format":       "g711_ulaw",
-            # "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
+            "model": "gpt-4o-realtime-preview",
+            "modalities": ["audio"],   # 🔥 IMPORTANT: audio only
+            "instructions": SYSTEM_INSTRUCTIONS,
+            "voice": VOICE,
+            "input_audio_format": "g711_ulaw",
+            "output_audio_format": "g711_ulaw",
             "turn_detection": {
-                "type":                "server_vad",
-                "threshold":           VAD_THRESHOLD,
-                "prefix_padding_ms":   PREFIX_PADDING_MS,
+                "type": "server_vad",
+                "threshold": VAD_THRESHOLD,
+                "prefix_padding_ms": PREFIX_PADDING_MS,
                 "silence_duration_ms": SILENCE_DURATION_MS
             },
-            "temperature":                TEMPERATURE,
-            "max_response_output_tokens": 1024,
+            "temperature": TEMPERATURE,
+            "max_response_output_tokens": 4096,
             "tools": [
                 # ── VERIFICATION ──────────────────────────────────────────────
                 {

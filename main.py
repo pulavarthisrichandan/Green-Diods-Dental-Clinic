@@ -49,36 +49,6 @@ from general_enquiry.enquiry_executor import (
 from knowledge_base.kb_controller import handle_kb_query
 from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
 
-from datetime import timedelta
-import re
-
-def normalize_relative_date(date_str: str) -> str:
-    """
-    Convert phrases like 'coming friday', 'this monday'
-    into DD-MON-YYYY format.
-    """
-    if not date_str:
-        return date_str
-
-    date_str = date_str.lower().strip()
-    today = datetime.now()
-
-    weekdays = {
-        "monday": 0, "tuesday": 1, "wednesday": 2,
-        "thursday": 3, "friday": 4,
-        "saturday": 5, "sunday": 6
-    }
-
-    for day_name, day_index in weekdays.items():
-        if day_name in date_str:
-            today_index = today.weekday()
-            delta = (day_index - today_index) % 7
-            if delta == 0:
-                delta = 7
-            target_date = today + timedelta(days=delta)
-            return target_date.strftime("%d-%b-%Y").upper()
-
-    return date_str
 
 load_dotenv()
 app = FastAPI()
@@ -92,9 +62,9 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
 OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
-VOICE                    = "shimmer"
+VOICE                    = "coral"
 TEMPERATURE              = 0.8
-VAD_THRESHOLD            = 0.75 
+VAD_THRESHOLD            = 0.75
 PREFIX_PADDING_MS        = 300
 SILENCE_DURATION_MS      = 900
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
@@ -178,25 +148,14 @@ SYSTEM_INSTRUCTIONS = (
     "Only ask 'Are you an existing or new patient?' when intent is BOOK, UPDATE, or CANCEL.\n"
     "Do NOT ask for general questions about address, hours, pricing, insurance.\n\n"
 
-    "VERIFICATION RULE:\n"
-    "Only ask whether the caller is an existing or new patient\n"
-    "IF AND ONLY IF the user intent is:\n"
-    "- Book appointment\n"
-    "- Treatment-related complaint\n"
-    "- Order status\n\n"
-
-    "For general enquiries (hours, pricing, insurance, address, procedures),"
-    "DO NOT ask verification or patient type."
-
-    "STEP 0 — MANDATORY FIRST QUESTION (with one exception):"
-    "Always ask: 'Are you an existing patient with us, or is this your first visit?'"
-    "-> EXISTING -> EXISTING PATIENT FLOW"
-    "-> NEW      -> NEW PATIENT FLOW"
-    "-> UNSURE   -> 'Have you visited us before?'"
-    "EXCEPTION — UPDATE or CANCEL: skip Step 0 entirely."
-    "Only existing patients have appointments."
-    "Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify)."
-    
+    "STEP 0 — MANDATORY FIRST QUESTION (with one exception):\n"
+    " Always ask: 'Are you an existing patient with us, or is this your first visit?'\n"
+    " -> EXISTING -> EXISTING PATIENT FLOW\n"
+    " -> NEW      -> NEW PATIENT FLOW\n"
+    " -> UNSURE   -> 'Have you visited us before?'\n"
+    " EXCEPTION — UPDATE or CANCEL: skip Step 0 entirely.\n"
+    "   Only existing patients have appointments.\n"
+    "   Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify).\n\n"
 
     "EXISTING PATIENT FLOW:\n"
     "  Step 1: Ask last name\n"
@@ -216,11 +175,9 @@ SYSTEM_INSTRUCTIONS = (
 
     "NEW PATIENT FLOW (no skipping):\n"
     "  Step 1: first name  Step 2: last name  Step 3: DOB (confirm as DD-MON-YYYY)\n"
-    "  Step 4: contact (read back digit by digit)"
-    "  Step 5: Ask clearly: 'Do you have private health insurance? If yes, which provider?, or if you want you can skip this'\n"
-    "  Step 6: insurance is REQUIRED (if none, store as \"None\")\n"
-    "  Step 7: call create_new_patient() immediately\n"
-    "  Step 8: wait for status=CREATED, then say account is ready\n\n"
+    "  Step 4: contact (read back digit by digit)  Step 5: insurance (optional)\n"
+    "  Step 6: call create_new_patient() immediately\n"
+    "  Step 7: wait for status=CREATED, then say account is ready\n\n"
 
     "After verification: patient is verified for the entire call.\n"
     "Use their first name. NEVER ask name/contact again.\n\n"
@@ -235,15 +192,6 @@ SYSTEM_INSTRUCTIONS = (
     "6. NEVER say 'schedule a consultation'\n"
     "7. Phone readback ALWAYS digit by digit\n"
     "8. NEVER ask repeated questions — if info already given, use it\n\n"
-
-    # ── TREATMENT INFORMATION RULES ──────────────────────────────────────────
-    "TREATMENT INFORMATION RULE:\n"
-    "Only describe treatments exactly as listed in SERVICES.\n"
-    "Never suggest consultation.\n"
-    "Never suggest additional treatments beyond what the user asked.\n"
-    "If user asks about a treatment not listed, say:\n"
-    "I'm sorry, we don't currently offer that treatment."
-    "Never invent treatments.\n"
 
     "CLINIC DETAILS (from memory, no function call):\n"
     "- Address: 123, Building, Melbourne Central, Melbourne, Victoria\n"
@@ -327,9 +275,6 @@ SYSTEM_INSTRUCTIONS = (
     "  - TYPE 2: must verify before filing\n"
     "  - NEVER mention complaint ID\n"
     "  - Always empathy BEFORE any question\n\n"
-
-    "CRITICAL:\n"
-    "Never ask verification before determining whether complaint is general or treatment-related."
 
     # ── BUSINESS / SUPPLIER CALLS ─────────────────────────────────────────────
     "BUSINESS CALL ROUTING — THREE TYPES:\n"
@@ -788,20 +733,12 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
 
         elif function_name == "create_new_patient":
             phone = extract_phone_from_text(arguments.get("contact_number", ""))
-            
-            raw_date = arguments.get("preferred_date", "")
-            normalized_date = normalize_relative_date(raw_date)
-
-            r = book_appointment(
-                patient_id=p["patient_id"],
-                first_name=p["first_name"],
-                last_name=p["last_name"],
-                date_of_birth=p["date_of_birth"],
-                contact_number=p["contact_number"],
-                preferred_treatment=arguments.get("preferred_treatment", ""),
-                preferred_date=normalized_date,
-                preferred_time=arguments.get("preferred_time", ""),
-                preferred_dentist=arguments.get("preferred_dentist", "")
+            r = create_new_patient(
+                first_name=arguments.get("first_name", ""),
+                last_name=arguments.get("last_name", ""),
+                dob=normalize_dob(arguments.get("date_of_birth", "")),
+                contact_number=phone,
+                insurance_info=arguments.get("insurance_info")
             )
             if r["status"] == "CREATED":
                 session["patient_data"] = r
@@ -1005,15 +942,8 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             result = {"status": r.get("status", "SUCCESS"), "response": r.get("response", "")}
 
         elif function_name == "answer_dental_question":
-            query = arguments.get("query", "")
-            r = handle_kb_query(user_input=query, session=session)
-
-            # Hard restriction: never allow consultation suggestion
-            response_text = r.get("response", "")
-            if "consultation" in response_text.lower():
-                response_text = response_text.replace("consultation", "")
-
-            result = {"status": r.get("source", "kb"), "response": response_text}
+            r = handle_kb_query(user_input=arguments.get("query", ""), session=session)
+            result = {"status": r.get("source", "kb"), "response": r.get("response", "")}
 
         elif function_name == "get_my_order_status":
             if not session.get("verified"):
@@ -1219,8 +1149,7 @@ async def handle_media_stream(websocket: WebSocket):
                 return
             print("[WATCHDOG] Bot silent — nudge")
             try:
-                if not session.get("is_speaking"):
-                    await safe_openai_send(openai_ws, {"type": "response.create"})
+                await safe_openai_send(openai_ws, {"type": "response.create"})
             except Exception as e:
                 print(f"[WATCHDOG ERROR] {e}")
             wd["armed"] = False
@@ -1248,7 +1177,7 @@ async def handle_media_stream(websocket: WebSocket):
 
                 try:
                     if event_type == "session.updated":
-                        if session and not session.get("greeting_sent") and not session.get("verified"):
+                        if session and not session.get("greeting_sent"):
                             session["greeting_sent"] = True
                             await safe_openai_send(openai_ws, {
                                 "type": "conversation.item.create",
@@ -1301,14 +1230,6 @@ async def handle_media_stream(websocket: WebSocket):
                         pass  # intentionally empty
 
                     elif event_type == "input_audio_buffer.speech_started":
-                        # Immediately stop sending audio to Twilio
-                        try:
-                            await websocket.send_json({
-                                "event": "clear",
-                                "streamSid": stream_sid
-                            })
-                        except Exception:
-                            pass
                         if session and session.get("is_speaking"):
                             print("[BARGE-IN] User interrupted — stopping bot")
                             if session["audio_start_time"] is not None:

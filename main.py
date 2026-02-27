@@ -61,7 +61,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini-preview"
+OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-mini-preview"
 VOICE                    = "marin"
 TEMPERATURE              = 0.8
 VAD_THRESHOLD            = 0.75
@@ -1442,4 +1442,3 @@ if __name__ == "__main__":
     print(f"             supplier check | order-by-patient-id | no-repeat-questions")
     print("=" * 70)
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-

@@ -1957,12 +1957,14 @@ def get_session_config() -> dict:
     return {
         "type": "session.update",
         "session": {
-            "model": "gpt-4o-realtime-preview",
-            "modalities": ["audio"],   # 🔥 IMPORTANT: audio only
+            "modalities": ["audio", "text"],   # REQUIRED
             "instructions": SYSTEM_INSTRUCTIONS,
             "voice": VOICE,
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
+            "response_format": {
+                "type": "audio"     # 🔥 THIS IS THE KEY
+            },
             "turn_detection": {
                 "type": "server_vad",
                 "threshold": VAD_THRESHOLD,

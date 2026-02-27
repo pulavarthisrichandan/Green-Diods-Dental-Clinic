@@ -1305,41 +1305,49 @@ async def handle_media_stream(websocket: WebSocket):
                         pass  # intentionally empty
 
                     elif event_type == "input_audio_buffer.speech_started":
-                        # Immediately stop sending audio to Twilio
-                        try:
-                            await websocket.send_json({
-                                "event": "clear",
-                                "streamSid": stream_sid
-                            })
-                        except Exception:
-                            pass
+
                         if session and session.get("is_speaking"):
+
                             print("[BARGE-IN] User interrupted — stopping bot")
+
+                            # ONLY clear if bot is speaking
+                            try:
+                                await websocket.send_json({
+                                    "event": "clear",
+                                    "streamSid": stream_sid
+                                })
+                            except Exception:
+                                pass
+
                             if session["audio_start_time"] is not None:
                                 session["elapsed_ms"] = int(
                                     (time.time() - session["audio_start_time"]) * 1000
                                 )
                             else:
                                 session["elapsed_ms"] = 0
+
                             try:
                                 await safe_openai_send(openai_ws, {"type": "response.cancel"})
                             except Exception:
                                 pass
+
                             if session["last_assistant_item_id"]:
                                 try:
                                     await safe_openai_send(openai_ws, {
-                                        "type":          "conversation.item.truncate",
-                                        "item_id":       session["last_assistant_item_id"],
+                                        "type": "conversation.item.truncate",
+                                        "item_id": session["last_assistant_item_id"],
                                         "content_index": 0,
-                                        "audio_end_ms":  session["elapsed_ms"]
+                                        "audio_end_ms": session["elapsed_ms"]
                                     })
                                 except Exception:
                                     pass
+
                             session["audio_queue"].clear()
                             session["last_assistant_item_id"] = None
-                            session["audio_start_time"]       = None
-                            session["elapsed_ms"]             = 0
-                            session["is_speaking"]            = False
+                            session["audio_start_time"] = None
+                            session["elapsed_ms"] = 0
+                            session["is_speaking"] = False
+
                         else:
                             print("[USER] Speaking (no barge-in needed)")
 

@@ -1547,8 +1547,6 @@
 
 
 
-
-
 """
 DentalBot v2 -- main.py
 OpenAI Realtime API + Twilio WebSocket
@@ -1615,8 +1613,8 @@ if not OPENAI_API_KEY:
 OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
 VOICE                    = "coral"
 TEMPERATURE              = 0.8
-VAD_THRESHOLD            = 0.90   # raised: reduce false triggers from phone line noise
-PREFIX_PADDING_MS        = 500    # raised: require more audio before treating as speech
+VAD_THRESHOLD            = 0.90   # raised: reduces false triggers from phone line noise
+PREFIX_PADDING_MS        = 500    # raised: needs more audio before treating as speech
 SILENCE_DURATION_MS      = 700    # lowered: respond quickly after real speech ends
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
 
@@ -1649,13 +1647,12 @@ SYSTEM_INSTRUCTIONS = (
     "child dental issue     -> Children's Dentistry\n\n"
 
     "TREATMENT ANSWER RULES — NEVER BREAK:\n"
-    "1. ONLY recommend or mention treatments from the 18-item SERVICES list above.\n"
-    "2. NEVER suggest, mention, or invent any treatment NOT in that list.\n"
-    "3. NEVER suggest a 'consultation', 'initial consultation', or 'check-up consultation'.\n"
-    "   If a check-up is needed, say 'Teeth Cleaning and Check-Up' — that is the correct service.\n"
-    "4. answer_dental_question() uses ONLY our internal knowledge base. Trust its response.\n"
-    "5. If KB has no answer say: 'I don't have that detail right now — our team can help in clinic.'\n"
-    "6. NEVER make up prices, durations, or procedure steps.\n\n"
+    "1. ONLY recommend treatments from the 18-item SERVICES list above.\n"
+    "2. NEVER suggest any treatment NOT in that list.\n"
+    "3. NEVER suggest a 'consultation' — use 'Teeth Cleaning and Check-Up' instead.\n"
+    "4. answer_dental_question() uses ONLY internal KB. Trust its response.\n"
+    "5. If KB has no answer: 'I don't have that detail — our team can help in clinic.'\n"
+    "6. NEVER invent prices, durations, or procedure steps.\n\n"
 
     "FUNCTION ROUTING:\n"
     "pricing/hours/payment/offers    -> get_business_information()\n"
@@ -1711,21 +1708,19 @@ SYSTEM_INSTRUCTIONS = (
     "CALL START BEHAVIOUR:\n"
     "After the greeting, STOP and WAIT silently for the caller to say what they need.\n"
     "Do NOT ask 'Are you an existing or new patient?' right after the greeting.\n"
-    "Listen to their intent first, then decide what to do.\n\n"
+    "Listen to their intent first, then decide.\n\n"
 
     "STEP 0 — WHEN TO ASK 'Are you an existing patient or a new patient?':\n"
-    "Ask ONLY when the caller's intent is one of these:\n"
-    "  MUST ASK: BOOK, UPDATE, or CANCEL an appointment\n"
-    "  MUST ASK: check order status, upcoming appointments, treatment history\n"
-    "  DO NOT ASK: address, hours, phone number, services, pricing, payment,\n"
-    "              insurance, warranty, dental questions, complaints (own rules below)\n"
-    "  EXCEPTION — UPDATE or CANCEL: skip Step 0 entirely.\n"
-    "    Only existing patients have appointments.\n"
-    "    Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify).\n"
-    "  When Step 0 IS required:\n"
-    "   -> EXISTING -> EXISTING PATIENT FLOW\n"
-    "   -> NEW      -> NEW PATIENT FLOW\n"
-    "   -> UNSURE   -> 'Have you visited us before?'\n\n"
+    "Ask ONLY when intent is: BOOK, UPDATE, or CANCEL an appointment,\n"
+    "  check order status, upcoming appointments, or treatment history.\n"
+    "DO NOT ASK for: address, hours, phone, services, pricing, payment,\n"
+    "  insurance, warranty, dental questions, or complaints (own rules apply).\n"
+    "EXCEPTION — UPDATE/CANCEL: skip Step 0. Only existing patients have appointments.\n"
+    "  Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify).\n"
+    "When Step 0 IS required:\n"
+    "  -> EXISTING -> EXISTING PATIENT FLOW\n"
+    "  -> NEW      -> NEW PATIENT FLOW\n"
+    "  -> UNSURE   -> 'Have you visited us before?'\n\n"
 
     "EXISTING PATIENT FLOW:\n"
     "  Step 1: Ask last name\n"
@@ -2689,10 +2684,7 @@ async def handle_media_stream(websocket: WebSocket):
     session       = None
     openai_ws     = None
     call_active   = {"running": True}
-    # FIX D: signals when Twilio 'start' event has set session, so OpenAI
-    # receive loop waits before sending session config (prevents race condition
-    # where session.updated fires while session is still None -> greeting lost)
-    session_ready = asyncio.Event()
+    session_ready = asyncio.Event()  # FIX D: unblocks OpenAI loop after Twilio 'start'
 
     try:
         openai_ws = await websockets.connect(
@@ -2742,12 +2734,12 @@ async def handle_media_stream(websocket: WebSocket):
             wd["task"]  = None
 
         try:
-            # FIX D: wait for Twilio 'start' to create session before sending config
-            # Without this, session.updated fires while session is None -> greeting never sends
+            # FIX D: wait for Twilio 'start' to set session before sending config
+            # Without this wait, session.updated fires while session=None -> greeting lost
             try:
                 await asyncio.wait_for(session_ready.wait(), timeout=10.0)
             except asyncio.TimeoutError:
-                print("[OpenAI] WARNING: session_ready timeout — proceeding anyway")
+                print("[WARN] session_ready timeout — proceeding anyway", flush=True)
             await safe_openai_send(openai_ws, get_session_config())
             print("[OpenAI] Session config sent", flush=True)
 
@@ -2768,18 +2760,18 @@ async def handle_media_stream(websocket: WebSocket):
                                     "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
                                 }
                             })
-                            # FIX E: explicit instructions force model to speak greeting
-                            # bare response.create returns empty response (no audio)
+                            # FIX E: bare response.create returns empty response (no audio).
+                            # Explicit instructions FORCE the model to speak the greeting.
                             await safe_openai_send(openai_ws, {
                                 "type": "response.create",
                                 "response": {
                                     "modalities": ["text", "audio"],
                                     "instructions": (
-                                        "The call has just connected. "
-                                        "Immediately say the greeting out loud: "
+                                        "The phone call has just connected. "
+                                        "Say the greeting out loud RIGHT NOW: "
                                         "'Hello! Thank you for calling Green Diode's Dental Clinic. "
-                                        "I'm Sarah, how may I assist you today?' "
-                                        "Then stop speaking and wait for the caller."
+                                        "I\'m Sarah, how may I assist you today?' "
+                                        "Speak it immediately, then stop and wait silently for the caller."
                                     )
                                 }
                             })
@@ -2812,33 +2804,33 @@ async def handle_media_stream(websocket: WebSocket):
                             session["audio_start_time"] = None
                             session["elapsed_ms"]       = 0
                         print("[BOT] Done speaking")
-                        # FIX G: do NOT send input_audio_buffer.clear here.
-                        # Clearing the buffer discards any speech the user
-                        # has already started saying while bot was finishing.
+                        # FIX G: removed input_audio_buffer.clear — it was discarding
+                        # user speech that started while bot was finishing its sentence.
 
                     elif event_type == "response.created":
                         if session:
                             session["current_response_id"] = data.get("response", {}).get("id")
 
                     elif event_type == "response.done":
-                        # FIX F: clear response ID so barge-in guard knows
-                        # no active response exists after this point
+                        # FIX F: clear so barge-in knows no active response after this
                         if session:
                             session["current_response_id"] = None
 
                     elif event_type == "input_audio_buffer.speech_started":
-                        # FIX F: only interrupt if bot actually has audio in-flight
-                        if session and session.get("is_speaking") and session.get("last_assistant_item_id"):
-                            print("[BARGE-IN] User interrupted — stopping bot immediately")
+                        # FIX F: only interrupt when bot truly has audio in-flight
+                        if (session
+                                and session.get("is_speaking")
+                                and session.get("last_assistant_item_id")):
+                            print("[BARGE-IN] User interrupted — stopping bot")
                             if session["audio_start_time"] is not None:
                                 session["elapsed_ms"] = int(
                                     (time.time() - session["audio_start_time"]) * 1000
                                 )
                             else:
                                 session["elapsed_ms"] = 0
-                            # FIX F: only cancel if there is an active response
-                            # sending response.cancel when no response is active causes
-                            # 'Cancellation failed: no active response found' error loop
+                            # FIX F: only cancel if there IS an active response
+                            # calling response.cancel on a finished response causes
+                            # 'Cancellation failed: no active response found' error
                             if session.get("current_response_id"):
                                 try:
                                     await safe_openai_send(openai_ws, {"type": "response.cancel"})
@@ -2932,7 +2924,7 @@ async def handle_media_stream(websocket: WebSocket):
                     session    = make_new_session(call_sid)
                     session["stream_sid"] = stream_sid
                     print(f"[Twilio] Connected | Stream: {stream_sid}")
-                    session_ready.set()  # FIX D: unblock receive_from_openai
+                    session_ready.set()  # FIX D: signal session is ready
 
                 elif event_type == "media":
                     if openai_ws and data.get("media", {}).get("payload"):

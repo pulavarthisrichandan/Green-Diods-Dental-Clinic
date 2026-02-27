@@ -49,6 +49,36 @@ from general_enquiry.enquiry_executor import (
 from knowledge_base.kb_controller import handle_kb_query
 from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
 
+from datetime import timedelta
+import re
+
+def normalize_relative_date(date_str: str) -> str:
+    """
+    Convert phrases like 'coming friday', 'this monday'
+    into DD-MON-YYYY format.
+    """
+    if not date_str:
+        return date_str
+
+    date_str = date_str.lower().strip()
+    today = datetime.now()
+
+    weekdays = {
+        "monday": 0, "tuesday": 1, "wednesday": 2,
+        "thursday": 3, "friday": 4,
+        "saturday": 5, "sunday": 6
+    }
+
+    for day_name, day_index in weekdays.items():
+        if day_name in date_str:
+            today_index = today.weekday()
+            delta = (day_index - today_index) % 7
+            if delta == 0:
+                delta = 7
+            target_date = today + timedelta(days=delta)
+            return target_date.strftime("%d-%b-%Y").upper()
+
+    return date_str
 
 load_dotenv()
 app = FastAPI()
@@ -64,7 +94,7 @@ if not OPENAI_API_KEY:
 OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
 VOICE                    = "shimmer"
 TEMPERATURE              = 0.8
-VAD_THRESHOLD            = 0.75
+VAD_THRESHOLD            = 0.75 
 PREFIX_PADDING_MS        = 300
 SILENCE_DURATION_MS      = 900
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
@@ -186,9 +216,11 @@ SYSTEM_INSTRUCTIONS = (
 
     "NEW PATIENT FLOW (no skipping):\n"
     "  Step 1: first name  Step 2: last name  Step 3: DOB (confirm as DD-MON-YYYY)\n"
-    "  Step 4: contact (read back digit by digit)  Step 5: insurance (optional)\n"
-    "  Step 6: call create_new_patient() immediately\n"
-    "  Step 7: wait for status=CREATED, then say account is ready\n\n"
+    "  Step 4: contact (read back digit by digit)"
+    "  Step 5: Ask clearly: 'Do you have private health insurance? If yes, which provider?, or if you want you can skip this'\n"
+    "  Step 6: insurance is REQUIRED (if none, store as \"None\")\n"
+    "  Step 7: call create_new_patient() immediately\n"
+    "  Step 8: wait for status=CREATED, then say account is ready\n\n"
 
     "After verification: patient is verified for the entire call.\n"
     "Use their first name. NEVER ask name/contact again.\n\n"
@@ -756,12 +788,20 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
 
         elif function_name == "create_new_patient":
             phone = extract_phone_from_text(arguments.get("contact_number", ""))
-            r = create_new_patient(
-                first_name=arguments.get("first_name", ""),
-                last_name=arguments.get("last_name", ""),
-                dob=normalize_dob(arguments.get("date_of_birth", "")),
-                contact_number=phone,
-                insurance_info=arguments.get("insurance_info")
+            
+            raw_date = arguments.get("preferred_date", "")
+            normalized_date = normalize_relative_date(raw_date)
+
+            r = book_appointment(
+                patient_id=p["patient_id"],
+                first_name=p["first_name"],
+                last_name=p["last_name"],
+                date_of_birth=p["date_of_birth"],
+                contact_number=p["contact_number"],
+                preferred_treatment=arguments.get("preferred_treatment", ""),
+                preferred_date=normalized_date,
+                preferred_time=arguments.get("preferred_time", ""),
+                preferred_dentist=arguments.get("preferred_dentist", "")
             )
             if r["status"] == "CREATED":
                 session["patient_data"] = r

@@ -1549,22 +1549,22 @@
 
 
 
-
-
-
 """
 DentalBot v2 -- main.py
 OpenAI Realtime API + Twilio WebSocket
 
 Fixes applied (cumulative):
-  1-17: (see prior history)
-  18: booking extraction + single confirm-before-book
-  19: DOB any-format -> DD-MON-YYYY
-  20: complaints type 1 (first/last/contact) + type 2 (full patient data)
-  21: supplier check + order-by-patient-id + no-repeat questions
-  22: FIX A - no upfront new/existing question (wait for intent)
-      FIX B - treatment answers only from services list, never suggest consultation
-      FIX C - barge-in triggers on ANY active response, not just is_speaking==True
+  1–15: (unchanged from prior versions — see history)
+  16. COMPLAINTS: two-path flow (general / treatment)
+  17. file_complaint handler: general = no verification
+  18. BOOKING: strict dentist/treatment extraction + single confirm-before-book
+  19. DOB: any user format → DD-MON-YYYY re-confirm before verify call
+  20. COMPLAINTS TYPE 1: collect first_name, last_name, contact_number (no DOB/verify)
+      COMPLAINTS TYPE 2: full save — patient_id, appointment_id, DOB, contact,
+                         treatment_name, dentist_name, date, time, extra_info
+  21. BUSINESS TYPE 2: extract caller_name+company_name from conversation, do NOT re-ask
+      BUSINESS TYPE 3: check known supplier list → update order by patient_id
+  22. NEVER ask repeated questions in any flow
 """
 
 import os
@@ -1600,6 +1600,7 @@ from general_enquiry.enquiry_executor import (
 from knowledge_base.kb_controller import handle_kb_query
 from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
 
+
 load_dotenv()
 app = FastAPI()
 
@@ -1607,63 +1608,38 @@ app = FastAPI()
 # CONFIG
 # ---------------------------------------------------------------------------
 
-OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL  = "wss://api.openai.com/v1/realtime?model=gpt-realtime-preview"
-VOICE                = "coral"
-TEMPERATURE          = 0.8
-VAD_THRESHOLD        = 0.75
-PREFIX_PADDING_MS    = 300
-SILENCE_DURATION_MS  = 700   # ✅ FIX C: slightly lower for snappier barge-in
-CLOUD_RUN_WSS_BASE   = "wss://green-diods-dental-clinic-production.up.railway.app"
+OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
+VOICE                    = "coral"
+TEMPERATURE              = 0.8
+VAD_THRESHOLD            = 0.90   # raised: reduce false triggers from phone line noise
+PREFIX_PADDING_MS        = 500    # raised: require more audio before treating as speech
+SILENCE_DURATION_MS      = 700    # lowered: respond quickly after real speech ends
+CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 # ---------------------------------------------------------------------------
 # SYSTEM INSTRUCTIONS
 # ---------------------------------------------------------------------------
 
 SYSTEM_INSTRUCTIONS = (
-    "You are Sarah, a warm and professional AI receptionist for Green Diodes Dental Clinic.\n\n"
+    "You are Sarah, a warm and professional AI receptionist for Green Diode's Dental Clinic.\n\n"
 
-    # ── SERVICES ──────────────────────────────────────────────────────────────
-    "SERVICES (memorise exactly — these are the ONLY treatments you may mention or book):\n"
-    "1. Teeth Cleaning and Check-Up\n"
-    "2. Dental Implants\n"
-    "3. All-on-4 Dental Implants\n"
-    "4. Dental Fillings\n"
-    "5. Wisdom Teeth Removal\n"
-    "6. Emergency Dental Services\n"
-    "7. Clear Aligners\n"
-    "8. Dental Crowns and Bridges\n"
-    "9. Root Canal Treatment\n"
-    "10. Custom Mouthguards\n"
-    "11. Dental Veneers\n"
-    "12. Tooth Extraction\n"
-    "13. Gum Disease Treatment\n"
-    "14. Dentures\n"
-    "15. Braces\n"
-    "16. Teeth Whitening\n"
-    "17. Zoom Whitening\n"
-    "18. Children's Dentistry\n\n"
+    "SERVICES (memorise — never call a function to list these):\n"
+    "1.Teeth Cleaning and Check-Up  2.Dental Implants  3.All-on-4 Dental Implants\n"
+    "4.Dental Fillings  5.Wisdom Teeth Removal  6.Emergency Dental Services\n"
+    "7.Clear Aligners  8.Dental Crowns and Bridges  9.Root Canal Treatment\n"
+    "10.Custom Mouthguards  11.Dental Veneers  12.Tooth Extraction\n"
+    "13.Gum Disease Treatment  14.Dentures  15.Braces  16.Teeth Whitening\n"
+    "17.Zoom Whitening  18.Children's Dentistry\n\n"
 
-    # ✅ FIX B — treatment rules
-    "TREATMENT ANSWER RULES — READ AND OBEY:\n"
-    "1. ONLY ever recommend or mention treatments from the 18-item SERVICES list above.\n"
-    "2. NEVER invent, suggest, or mention any treatment NOT in that list.\n"
-    "3. NEVER suggest a 'consultation', 'initial consultation', or 'check-up consultation'.\n"
-    "   If something similar is needed, say 'Teeth Cleaning and Check-Up' instead.\n"
-    "4. For treatment details (what it involves, recovery, pre/post care) call answer_dental_question().\n"
-    "5. answer_dental_question() uses ONLY our internal knowledge base — trust its response.\n"
-    "6. If the knowledge base has no answer for a treatment question, say:\n"
-    "   'I don't have detailed information on that right now — our team can help you in clinic.'\n"
-    "7. NEVER make up prices, durations, or procedure steps.\n\n"
-
-    "SYMPTOM MAPPING (answer directly, NO function call, NO consultation suggestion):\n"
-    "tooth pain/sensitivity -> Teeth Cleaning and Check-Up, Dental Fillings, or Root Canal Treatment\n"
-    "broken/cracked         -> Dental Crowns and Bridges or Emergency Dental Services\n"
+    "SYMPTOM MAPPING (answer directly, no function call):\n"
+    "tooth pain/sensitivity -> Cleaning+Check-Up, Filling, or Root Canal\n"
+    "broken/cracked         -> Crowns+Bridges or Emergency Dental\n"
     "severe/sudden pain     -> Emergency Dental Services\n"
-    "missing tooth          -> Dental Implants, All-on-4 Dental Implants, or Dentures\n"
+    "missing tooth          -> Implants, All-on-4, or Dentures\n"
     "yellow/stained         -> Teeth Whitening or Zoom Whitening\n"
     "crooked/bite           -> Clear Aligners or Braces\n"
     "bleeding gums          -> Gum Disease Treatment\n"
@@ -1672,189 +1648,253 @@ SYSTEM_INSTRUCTIONS = (
     "sport/grinding         -> Custom Mouthguards\n"
     "child dental issue     -> Children's Dentistry\n\n"
 
+    "TREATMENT ANSWER RULES — NEVER BREAK:\n"
+    "1. ONLY recommend or mention treatments from the 18-item SERVICES list above.\n"
+    "2. NEVER suggest, mention, or invent any treatment NOT in that list.\n"
+    "3. NEVER suggest a 'consultation', 'initial consultation', or 'check-up consultation'.\n"
+    "   If a check-up is needed, say 'Teeth Cleaning and Check-Up' — that is the correct service.\n"
+    "4. answer_dental_question() uses ONLY our internal knowledge base. Trust its response.\n"
+    "5. If KB has no answer say: 'I don't have that detail right now — our team can help in clinic.'\n"
+    "6. NEVER make up prices, durations, or procedure steps.\n\n"
+
     "FUNCTION ROUTING:\n"
-    "pricing/hours/payment/offers  -> get_business_information()\n"
-    "insurance                     -> get_insurance_information()\n"
-    "warranty                      -> get_warranty_information()\n"
-    "procedures/pre-post care      -> answer_dental_question()\n"
-    "order status                  -> get_my_order_status()\n"
-    "upcoming appointments         -> get_my_upcoming_appointments()\n"
-    "past treatment history        -> get_my_treatment_history()\n"
-    "NEVER call get_business_information() just to list treatments.\n\n"
+    "pricing/hours/payment/offers    -> get_business_information()\n"
+    "insurance                       -> get_insurance_information()\n"
+    "warranty                        -> get_warranty_information()\n"
+    "procedures/pre-post care        -> answer_dental_question()\n"
+    "order status                    -> get_my_order_status()\n"
+    "upcoming appointments           -> get_my_upcoming_appointments()\n"
+    "past treatment history          -> get_my_treatment_history()\n"
+    "NEVER call get_business_information() to list treatments\n\n"
 
     "3-TIER ROUTING:\n"
-    "Tier 1 pricing/hours  -> get_business_information()\n"
-    "Tier 2 'what is X?'   -> get_business_information() -> 2-3 sentence summary\n"
-    "Tier 3 detailed proc  -> answer_dental_question()\n\n"
+    "Tier1 pricing/hours -> get_business_information()\n"
+    "Tier2 what is X?    -> get_business_information() -> 2-3 sentence summary\n"
+    "Tier3 detailed procedure/recovery -> answer_dental_question()\n\n"
 
-    "PERSONALITY: warm, concise, English only, use first name after verification.\n\n"
+    "PERSONALITY: warm, concise, English only, use first name after verification\n"
+    "GREETING on [CALL_STARTED]: Hello! Thank you for calling Green Diode's Dental Clinic. "
+    "I'm Sarah, how may I assist you today?\n\n"
 
-    # ✅ FIX A — greeting and call-start behaviour
-    "GREETING & CALL START:\n"
-    "When the call starts say EXACTLY:\n"
-    "  'Hello! Thank you for calling Green Diodes Dental Clinic. I'm Sarah, how may I assist you today?'\n"
-    "Then STOP. Do NOT ask 'are you an existing patient?' at this point.\n"
-    "WAIT silently for the user to speak first and tell you what they need.\n\n"
+    """
+    SPEAKING STYLE — FOLLOW THESE EXACTLY
+    - Speak naturally like a real person, not a script reader
+    - Use contractions always: "I'll" not "I will", "you're" not "you are"
+    - Use natural filler transitions: "Of course!", "Absolutely!", "Sure thing!"
+    - When confirming details, sound warm: "Perfect, got that!" not "Confirmed."
+    - Vary sentence length — don't speak in uniform rhythm
+    - Show empathy: "Oh I'm sorry to hear that" / "That's great!"
+    - Never read structured lists — convert to natural spoken sentences
+    - Instead of "Date: 5th March, Time: 10 AM" say "the 5th of March at 10 in the morning"
+    """
 
-    "SPEAKING STYLE:\n"
-    "- Speak naturally, use contractions: I'll, you're, we've\n"
-    "- Natural fillers: 'Of course!', 'Absolutely!', 'Sure thing!'\n"
-    "- Warm confirmations: 'Perfect, got that!' not 'Confirmed.'\n"
-    "- Vary sentence length. Show empathy: 'Oh I'm sorry to hear that'\n"
-    "- Never read structured lists — convert to spoken sentences\n"
-    "- Say 'the 5th of March at 10 in the morning' not 'Date: 5th March, Time: 10 AM'\n\n"
-
-    # ✅ FIX A — caller type and verification trigger
-    "CALLER TYPE IDENTIFICATION — CRITICAL:\n\n"
-    "PATIENT (the vast majority of calls):\n"
-    "  Caller wants appointment, has tooth pain, asks about treatment/price,\n"
-    "  wants to cancel/reschedule, has a complaint, asks about their order.\n"
-    "  -> For general questions: answer directly, NO verification needed.\n"
-    "  -> For appointment booking/update/cancel: verify first (see BOOKING below).\n"
-    "  NEVER call log_supplier_call() for patients.\n\n"
+    # ── CALLER TYPE ──────────────────────────────────────────────────────────
+    "CALLER TYPE IDENTIFICATION — READ CAREFULLY:\n"
+    "\n"
+    "PATIENT (vast majority):\n"
+    "  Wants appointment, has tooth pain, asks about treatment/price,\n"
+    "  wants to cancel/reschedule, has a complaint, asks about order.\n"
+    "  -> ALWAYS verify/register patient first. NEVER call log_supplier_call().\n"
+    "\n"
     "BUSINESS / SUPPLIER (rare — explicit only):\n"
-    "  ONLY when caller EXPLICITLY says 'I'm from [company]', sales rep, courier.\n"
-    "  -> Call check_known_supplier() first, then route to Type 2 or Type 3.\n\n"
+    "  ONLY when caller EXPLICITLY says: 'I'm from [company]', sales rep,\n"
+    "  delivery courier, or mentions placing/delivering an order.\n"
+    "  -> Call check_known_supplier() first. Then route to Type 2 or Type 3.\n"
+    "\n"
+    "CRITICAL: general inquiry / 'I have a question' / 'I want to book' -> PATIENT.\n\n"
 
-    # ✅ FIX A — when to ask new/existing
-    "WHEN TO ASK 'ARE YOU A NEW OR EXISTING PATIENT?':\n"
-    "Ask this question ONLY when the user's intent is one of these:\n"
-    "  - Book an appointment\n"
-    "  - Update an existing appointment\n"
-    "  - Cancel an existing appointment\n"
-    "  - Check their specific order status\n"
-    "  - Check their upcoming appointments\n"
-    "  - Check their treatment history\n"
-    "DO NOT ask this for:\n"
-    "  - Questions about clinic address, hours, phone number\n"
-    "  - Questions about services or treatments\n"
-    "  - Questions about pricing or payment\n"
-    "  - Insurance or warranty questions\n"
-    "  - General dental questions\n"
-    "  - Complaints (follow COMPLAINTS FLOW — it has its own verification rules)\n"
-    "  - Any general inquiry\n"
-    "RULE: Greet -> wait -> listen to intent -> THEN decide if verification is needed.\n\n"
+    # ── VERIFICATION ─────────────────────────────────────────────────────────
+    "VERIFICATION:\n\n"
+    "Only ask 'Are you an existing or new patient?' when intent is BOOK, UPDATE, or CANCEL.\n"
+    "Do NOT ask for general questions about address, hours, pricing, insurance.\n\n"
 
-    "VERIFICATION FLOWS:\n\n"
+    "CALL START BEHAVIOUR:\n"
+    "After the greeting, STOP and WAIT silently for the caller to say what they need.\n"
+    "Do NOT ask 'Are you an existing or new patient?' right after the greeting.\n"
+    "Listen to their intent first, then decide what to do.\n\n"
+
+    "STEP 0 — WHEN TO ASK 'Are you an existing patient or a new patient?':\n"
+    "Ask ONLY when the caller's intent is one of these:\n"
+    "  MUST ASK: BOOK, UPDATE, or CANCEL an appointment\n"
+    "  MUST ASK: check order status, upcoming appointments, treatment history\n"
+    "  DO NOT ASK: address, hours, phone number, services, pricing, payment,\n"
+    "              insurance, warranty, dental questions, complaints (own rules below)\n"
+    "  EXCEPTION — UPDATE or CANCEL: skip Step 0 entirely.\n"
+    "    Only existing patients have appointments.\n"
+    "    Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify).\n"
+    "  When Step 0 IS required:\n"
+    "   -> EXISTING -> EXISTING PATIENT FLOW\n"
+    "   -> NEW      -> NEW PATIENT FLOW\n"
+    "   -> UNSURE   -> 'Have you visited us before?'\n\n"
+
     "EXISTING PATIENT FLOW:\n"
     "  Step 1: Ask last name\n"
     "  Step 2: Ask date of birth\n"
-    "  Step 3: Convert DOB to DD-MON-YYYY, read back:\n"
-    "    'Just to confirm, that's the [DD] of [Month] [YYYY] — is that right?'\n"
-    "    Examples: '12/06/1990' -> '12th of June 1990'\n"
-    "              '15 03 2001' -> '15th of March 2001'\n"
-    "    WAIT for YES before calling verify_existing_patient()\n"
+    "  Step 3: ALWAYS convert DOB to DD-MON-YYYY and read back:\n"
+    "          'Just to confirm, that's the [DD] of [Month] [YYYY] — is that right?'\n"
+    "          Examples of what user might say -> what you confirm:\n"
+    "            '12/06/1990'     -> '12th of June 1990'\n"
+    "            '6-12-90'        -> '6th of December 1990'\n"
+    "            '15 03 2001'     -> '15th of March 2001'\n"
+    "            'fifteenth March 2001' -> '15th of March 2001'\n"
+    "          WAIT for user to say YES before calling verify_existing_patient()\n"
     "  Step 4: Call verify_existing_patient()\n"
     "    VERIFIED       -> read contact digit by digit, then assist\n"
     "    MULTIPLE_FOUND -> ask contact number, call verify_with_contact_number()\n"
-    "    NOT_FOUND      -> offer retry or create new account\n\n"
+    "    NOT_FOUND      -> offer to retry or create new account\n\n"
+
     "NEW PATIENT FLOW (no skipping):\n"
     "  Step 1: first name  Step 2: last name  Step 3: DOB (confirm as DD-MON-YYYY)\n"
-    "  Step 4: contact (read back digit by digit, wait for confirmation)\n"
-    "  Step 5: insurance (optional — may say 'none')\n"
+    "  Step 4: contact (read back digit by digit)  Step 5: insurance (optional)\n"
     "  Step 6: call create_new_patient() immediately\n"
-    "  Step 7: wait for status=CREATED\n"
-    "  Step 8: say 'Great, your account's all set!' then continue to booking\n\n"
-    "After verification: patient is verified for the ENTIRE call.\n"
-    "Use first name. NEVER ask name/contact again.\n\n"
+    "  Step 7: wait for status=CREATED, then say account is ready\n\n"
 
+    "After verification: patient is verified for the entire call.\n"
+    "Use their first name. NEVER ask name/contact again.\n\n"
+
+    # ── GOLDEN RULES ─────────────────────────────────────────────────────────
     "GOLDEN RULES (never break):\n"
     "1. NEVER ask appointment ID — use get_my_appointments()\n"
     "2. NEVER mention any internal ID in responses\n"
     "3. NEVER ask name or contact after verification\n"
     "4. NEVER give medication advice or diagnose\n"
     "5. After booking — say date, time, dentist only\n"
-    "6. NEVER say 'schedule a consultation' or 'book a consultation'\n"
+    "6. NEVER say 'schedule a consultation'\n"
     "7. Phone readback ALWAYS digit by digit\n"
-    "8. NEVER ask a repeated question\n"
+    "8. NEVER ask repeated questions — if info already given, use it\n"
     "9. NEVER mention any treatment not in the 18-item SERVICES list\n\n"
 
     "CLINIC DETAILS (from memory, no function call):\n"
     "- Address: 123, Building, Melbourne Central, Melbourne, Victoria\n"
     "- Phone: 03 6160 3456\n"
-    "- Hours: Monday-Friday 9:00 AM - 6:00 PM, Saturday-Sunday CLOSED\n\n"
+    "- Hours: Monday–Friday 9:00 AM–6:00 PM, Saturday–Sunday CLOSED\n\n"
 
     "DENTISTS:\n"
     "Dr. Emily Carter    (General Dentistry)\n"
     "Dr. James Nguyen    (Cosmetic and Restorative)\n"
     "Dr. Sarah Mitchell  (Orthodontics and Periodontics)\n\n"
 
-    "BOOKING (only after patient is verified):\n"
-    "DETAIL EXTRACTION:\n"
-    "  - Treatment: map user words to exact service name\n"
-    "    'cleaning' -> 'Teeth Cleaning and Check-Up'\n"
-    "    'filling'  -> 'Dental Fillings'\n"
-    "    'implant'  -> 'Dental Implants'\n"
-    "    'whitening'-> 'Teeth Whitening'\n"
-    "    'braces'   -> 'Braces'\n"
-    "    'aligners' -> 'Clear Aligners'\n"
-    "  - Dentist: map partial to full name\n"
-    "    'James'/'Nguyen' -> 'Dr. James Nguyen'\n"
-    "    'Emily'/'Carter' -> 'Dr. Emily Carter'\n"
-    "    'Mitchell'/'Sarah' -> 'Dr. Sarah Mitchell'\n"
-    "    NEVER substitute a different dentist\n"
+    # ── BOOKING ──────────────────────────────────────────────────────────────
+    "BOOKING (only after patient is verified or created):\n"
+    "\n"
+    "DETAIL EXTRACTION — CRITICAL:\n"
+    "  - Listen carefully and extract EXACTLY what the user says\n"
+    "  - Treatment: use the EXACT treatment name the user mentioned\n"
+    "    e.g. user says 'cleaning' -> use 'Teeth Cleaning and Check-Up'\n"
+    "         user says 'filling'  -> use 'Dental Fillings'\n"
+    "         user says 'implant'  -> use 'Dental Implants'\n"
+    "  - Dentist: map partial names to full names:\n"
+    "    'James' / 'Nguyen' / 'James Nguyen' -> 'Dr. James Nguyen'\n"
+    "    'Emily' / 'Carter' / 'Emily Carter' -> 'Dr. Emily Carter'\n"
+    "    'Sarah Mitchell' / 'Mitchell'       -> 'Dr. Sarah Mitchell'\n"
+    "    NEVER substitute a different dentist than what the user said\n"
+    "  - Date/Time: extract exactly what user said\n"
+    "\n"
     "BOOKING FLOW:\n"
-    "  1. Collect treatment, date, time, dentist preference\n"
+    "  1. Collect all details (treatment, date, time, dentist preference)\n"
     "  2. If specific dentist -> check_slot_availability()\n"
     "     If no preference    -> find_any_available_dentist()\n"
-    "  3. Confirm ALL details ONCE: 'So that's [treatment] on [date] at [time] "
-    "with [dentist] — shall I go ahead and book that for you?'\n"
+    "  3. Read back ONCE: 'So that's [treatment] on [date] at [time] with [dentist] — shall I go ahead?'\n"
     "  4. Patient says YES -> call book_appointment() immediately\n"
-    "  5. NEVER book without YES. NEVER confirm again after YES.\n\n"
+    "  5. NEVER book without explicit YES\n"
+    "  6. NEVER ask to confirm treatment/dentist separately — confirm EVERYTHING in one go\n\n"
 
+    # ── UPDATE / CANCEL ───────────────────────────────────────────────────────
     "UPDATE/CANCEL:\n"
-    "  Skip 'new or existing' question — only existing patients have appointments.\n"
-    "  Go to EXISTING PATIENT FLOW directly (last name -> DOB -> verify).\n"
-    "  After verification: call get_my_appointments() -> read as numbered list.\n"
-    "  Use appointment_index (1, 2, 3…) for update or cancel.\n"
-    "  CANCEL: confirm with patient -> cancel_my_appointment() after YES.\n\n"
+    "  Skip Step 0 (existing patients only).\n"
+    "  Go directly to EXISTING PATIENT FLOW (last name -> DOB -> verify).\n"
+    "  After verification: call get_my_appointments() -> read as numbered list\n"
+    "  Use appointment_index (1,2,3…) for update or cancel\n"
+    "  CANCEL: confirm with patient -> cancel_my_appointment() after YES\n\n"
 
-    "COMPLAINTS — TWO-TYPE FLOW:\n\n"
-    "STEP 1: Ask first:\n"
-    "  'Is your complaint about something general — like our service, staff, "
-    "or environment — or is it specifically about a treatment you received?'\n\n"
-    "TYPE 1 — GENERAL (no verification needed):\n"
-    "  Triggers: staff, waiting, billing, parking, cleanliness, phone, reception.\n"
-    "  1. Empathy: 'I'm so sorry to hear that, I completely understand.'\n"
-    "  2. 'Could you describe what happened?'\n"
-    "  3. 'May I take your first name, last name, and best contact number?'\n"
-    "  4. Confirm complaint summary once. YES -> file_complaint(general)\n"
-    "  !!! NEVER ask DOB. NEVER verify. NEVER ask new/existing. !!!\n\n"
-    "TYPE 2 — TREATMENT (verification required):\n"
-    "  Triggers: filling, crown, implant, root canal, aligner, veneer, pain after procedure.\n"
-    "  1. Empathy: 'I'm really sorry about your treatment experience.'\n"
-    "  2. Follow EXISTING PATIENT FLOW\n"
-    "  3. Collect: treatment name, dentist name, approx date, complaint details\n"
-    "  4. Confirm all once. YES -> file_complaint(treatment)\n\n"
+    # ── COMPLAINTS ───────────────────────────────────────────────────────────
+    "COMPLAINTS — TWO-TYPE FLOW:\n"
+    "\n"
+    "STEP 1: Ask 'Is your complaint about something general — like our service, staff,\n"
+    "or environment — or is it about a specific treatment you received here?'\n"
+    "\n"
+    "TYPE 1 — GENERAL COMPLAINT (no verification):\n"
+    "  Examples: refund, rude staff, bad environment, billing issue, long wait, parking.\n"
+    "  Steps:\n"
+    "  1. Empathy: 'I'm so sorry to hear that, I completely understand your frustration.'\n"
+    "  2. Ask: 'Could you describe what happened?'\n"
+    "  3. Ask: 'May I take your first name, last name, and best contact number?\n"
+    "     (these are for our records so the manager can follow up with you)'\n"
+    "  4. Confirm: '[Name], just to confirm — [complaint summary]. Shall I log this?\n"
+    "  5. YES -> call file_complaint(category=general, first_name, last_name, contact_number)\n"
+    "  6. Say: 'Done! I've logged your complaint and our manager will be in touch.'\n"
+    "  !!! NEVER ask for DOB. NEVER verify. NEVER ask 'new or existing'. !!!\n"
+    "\n"
+    "TYPE 2 — TREATMENT COMPLAINT (verification required):\n"
+    "  Examples: bad treatment, problem with filling/crown/implant, medication issue,\n"
+    "            pain/problem after a procedure, issue with dentist.\n"
+    "  Steps:\n"
+    "  1. Empathy: 'I'm really sorry to hear you've had a problem with your treatment.'\n"
+    "  2. Say: 'I'll need to quickly verify your identity to pull up your records.'\n"
+    "  3. Follow EXISTING PATIENT FLOW (last name -> DOB -> verify)\n"
+    "  4. After verification ask: 'Which treatment is the complaint about?'\n"
+    "  5. Ask: 'Was this with a specific dentist?'\n"
+    "  6. Ask: 'Roughly when was the treatment?'\n"
+    "  7. Ask: 'Is there anything else you'd like to add?'\n"
+    "  8. Confirm ALL details once\n"
+    "  9. YES -> call file_complaint(category=treatment, all fields)\n"
+    "  10. Say: 'Logged! Our team will review and contact you within 2 business days.'\n"
+    "\n"
     "COMPLAINT RULES:\n"
-    "  - Ask TYPE 1 vs TYPE 2 FIRST — never jump to verification\n"
-    "  - Never ask DOB for TYPE 1\n"
-    "  - Never mention complaint ID\n"
-    "  - Always empathy before any question\n\n"
+    "  - Ask TYPE 1 or TYPE 2 question FIRST — never jump to verification\n"
+    "  - TYPE 1: NEVER ask last name alone first, NEVER ask DOB, NEVER verify\n"
+    "  - TYPE 2: must verify before filing\n"
+    "  - NEVER mention complaint ID\n"
+    "  - Always empathy BEFORE any question\n\n"
 
-    "BUSINESS CALL ROUTING — THREE TYPES:\n\n"
-    "TYPE 1 — PATIENT ENQUIRY: pricing, hours, services, insurance, warranty.\n"
-    "  -> Answer directly. No verification for general questions.\n\n"
-    "TYPE 2 — AGENT / VENDOR CALL (invoice, delay, promotion):\n"
-    "  Extract name/company from what was already said — do NOT re-ask.\n"
-    "  Ask only missing: contact number, purpose.\n"
-    "  Call log_supplier_call(). Say: 'I've noted this for management.'\n"
-    "  Never commit to payments or approvals. Never share patient data.\n\n"
+    # ── BUSINESS / SUPPLIER CALLS ─────────────────────────────────────────────
+    "BUSINESS CALL ROUTING — THREE TYPES:\n"
+    "\n"
+    "TYPE 1 — PATIENT GENERAL ENQUIRY:\n"
+    "  Questions about treatments, prices, hours, insurance, warranty.\n"
+    "  -> Answer directly using get_business_information() / get_insurance_information() etc.\n"
+    "  -> Never verify patient for general enquiries.\n"
+    "\n"
+    "TYPE 2 — AGENT / VENDOR CALL (delay, invoice, promotion, etc.):\n"
+    "  Caller says: 'I'm from [company], calling about [purpose]'\n"
+    "  Extract from what caller already said — DO NOT re-ask name/company if already given.\n"
+    "  Steps:\n"
+    "  1. If name or company not yet given -> ask ONCE: 'May I have your name and company?'\n"
+    "  2. Ask: 'And your best contact number?'\n"
+    "  3. Ask: 'Thank you — could you briefly describe the purpose of your call?'\n"
+    "  4. Call log_supplier_call() with all collected details\n"
+    "  5. Say: 'Thank you, [name]. I've noted your message and will pass it to our management.'\n"
+    "  !!! Never commit to payments, approvals, or deliveries. !!!\n"
+    "  !!! Never share patient personal information. !!!\n"
+    "\n"
     "TYPE 3 — SUPPLIER ORDER-READY CALL:\n"
-    "  Valid suppliers: AusDental Labs Pty Ltd, MedPro Orthodontics,\n"
-    "    Southern Implant Supply Co., PrecisionDenture Works, OralCraft Technologies.\n"
-    "  1. Call check_known_supplier(company_name)\n"
-    "  2. FOUND -> ask patient_id or last name + product name\n"
-    "  3. Call update_supplier_order() + log_supplier_call()\n"
-    "  4. 'Done! Order marked as ready for [patient]. Our team will arrange collection.'\n\n"
+    "  Caller says: 'I'm from [supplier] and the order for patient [X] is ready for delivery.'\n"
+    "  Valid supplier list (check with check_known_supplier()):\n"
+    "    - AusDental Labs Pty Ltd       (Crowns, Bridges, Veneers, Tooth Caps)\n"
+    "    - MedPro Orthodontics          (Braces, Clear Aligners, Retainers)\n"
+    "    - Southern Implant Supply Co.  (Implants, Abutments)\n"
+    "    - PrecisionDenture Works       (Dentures, Partial Plates)\n"
+    "    - OralCraft Technologies       (Mouthguards, Night Guards)\n"
+    "  Steps:\n"
+    "  1. Call check_known_supplier(company_name) to verify\n"
+    "     - NOT_FOUND -> 'I'm sorry, I don't have you on our supplier list. Let me log your details.'\n"
+    "                     -> treat as TYPE 2\n"
+    "  2. FOUND -> 'Thank you for calling! Which patient is this order for?'\n"
+    "  3. Ask for patient_id OR last name. Collect product name.\n"
+    "  4. Call update_supplier_order(patient_id, product_name) to mark order as ready\n"
+    "  5. Also call log_supplier_call() to record the call\n"
+    "  6. Say: 'Perfect, I've updated the order status to ready for [patient name].\n"
+    "     Our team will arrange collection. Thank you!'\n"
+    "  Products that require orders: Dentures, Braces, Clear Aligners, Dental Implants,\n"
+    "    Crowns/Bridges, Veneers, Tooth Caps, Custom Mouthguards, Root Canal Crowns.\n\n"
 
-    "MID-FLOW: unrelated question -> answer -> 'Shall we continue?' -> YES resume.\n\n"
-    "ENDING: 'Thank you for calling Green Diodes Dental Clinic. Have a wonderful day!'\n\n"
+    "MID-FLOW: unrelated question -> answer -> 'Shall we continue?' -> YES resume\n\n"
+    "ENDING: Thank you for calling Green Diode's Dental Clinic. Have a wonderful day!\n\n"
 
     "TURN-TAKING RULES:\n"
-    "After asking ANY question, STOP and wait silently.\n"
-    "NEVER ask a follow-up until the user answers the current one.\n"
-    "NEVER assume information the user has not given.\n"
+    "After asking ANY question, stop speaking and wait silently for the user to respond.\n"
+    "Never ask a follow-up until the current question is answered.\n"
+    "Never assume information the user has not provided.\n"
     "NEVER ask a question you already have the answer to."
 )
 
@@ -1869,13 +1909,13 @@ async def safe_openai_send(openai_ws, payload: dict):
     try:
         await openai_ws.send(json.dumps(payload))
     except websockets.exceptions.ConnectionClosed:
-        print("[OpenAI WS] Send skipped — socket closed")
+        print("[OpenAI WS] Send skipped — socket already closed")
     except Exception as e:
         print("[OpenAI WS ERROR]", e)
 
 
 # ---------------------------------------------------------------------------
-# SESSION
+# SESSION HELPERS
 # ---------------------------------------------------------------------------
 
 def make_new_session(call_sid: str) -> dict:
@@ -1896,10 +1936,11 @@ def make_new_session(call_sid: str) -> dict:
         "audio_start_time":       None,
         "elapsed_ms":             0,
         "audio_queue":            [],
+        # ✅ FIX 21: track supplier context so we don't re-ask
         "supplier_context": {
-            "caller_name":       None,
-            "company_name":      None,
-            "contact_number":    None,
+            "caller_name":   None,
+            "company_name":  None,
+            "contact_number": None,
             "is_known_supplier": False,
         },
     }
@@ -1969,9 +2010,8 @@ def get_session_config() -> dict:
                 {
                     "type": "function", "name": "create_new_patient",
                     "description": (
-                        "Register a new patient. Call immediately after collecting "
-                        "first_name, last_name, DOB, contact. "
-                        "Do NOT say account ready before this returns status=CREATED."
+                        "Register a new patient. MUST call immediately after collecting "
+                        "first_name, last_name, DOB, contact. Do NOT say account ready before this returns."
                     ),
                     "parameters": {
                         "type": "object",
@@ -1994,10 +2034,8 @@ def get_session_config() -> dict:
                         "properties": {
                             "date":         {"type": "string"},
                             "time":         {"type": "string"},
-                            "dentist_name": {
-                                "type": "string",
-                                "description": "MUST be exact: Dr. Emily Carter | Dr. James Nguyen | Dr. Sarah Mitchell"
-                            }
+                            "dentist_name": {"type": "string",
+                                             "description": "MUST be exact: Dr. Emily Carter | Dr. James Nguyen | Dr. Sarah Mitchell"}
                         },
                         "required": ["date", "time", "dentist_name"]
                     }
@@ -2018,8 +2056,9 @@ def get_session_config() -> dict:
                     "type": "function", "name": "book_appointment",
                     "description": (
                         "Book appointment ONLY after patient says YES to full confirmation. "
-                        "preferred_dentist MUST be exact full name with Dr. prefix. "
-                        "preferred_treatment MUST be from the 18-item SERVICES list exactly."
+                        "preferred_dentist MUST match exactly what the user said "
+                        "(mapped to Dr. Emily Carter / Dr. James Nguyen / Dr. Sarah Mitchell). "
+                        "preferred_treatment MUST be the EXACT treatment user requested."
                     ),
                     "parameters": {
                         "type": "object",
@@ -2027,7 +2066,8 @@ def get_session_config() -> dict:
                             "preferred_treatment": {"type": "string"},
                             "preferred_date":      {"type": "string"},
                             "preferred_time":      {"type": "string"},
-                            "preferred_dentist":   {"type": "string"}
+                            "preferred_dentist":   {"type": "string",
+                                                    "description": "Exact full name with Dr. prefix"}
                         },
                         "required": ["preferred_treatment", "preferred_date",
                                      "preferred_time", "preferred_dentist"]
@@ -2040,7 +2080,7 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "update_my_appointment",
-                    "description": "Update appointment using appointment_index from get_my_appointments.",
+                    "description": "Update an appointment using appointment_index from get_my_appointments.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -2055,7 +2095,7 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "cancel_my_appointment",
-                    "description": "Cancel appointment after patient says YES.",
+                    "description": "Cancel appointment after patient confirms YES.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -2070,13 +2110,14 @@ def get_session_config() -> dict:
                     "type": "function", "name": "file_complaint",
                     "description": (
                         "Save a complaint.\n"
-                        "TYPE 1 (general): NO verification needed. "
+                        "TYPE 1 (general): NO verification. "
                         "Required: complaint_text, complaint_category=general, "
                         "first_name, last_name, contact_number.\n"
-                        "TYPE 2 (treatment): patient MUST be verified. "
-                        "Required: complaint_text, complaint_category=treatment, "
-                        "treatment_name, dentist_name, treatment_date. "
-                        "patient_id comes from verified session.\n"
+                        "TYPE 2 (treatment): patient MUST be verified first. "
+                        "Required: complaint_text, complaint_category=treatment. "
+                        "Also provide: treatment_name, dentist_name, treatment_date, "
+                        "treatment_time, additional_info. "
+                        "patient_id and appointment_id come from verified session.\n"
                         "NEVER ask for DOB for a general complaint."
                     ),
                     "parameters": {
@@ -2084,23 +2125,26 @@ def get_session_config() -> dict:
                         "properties": {
                             "complaint_text":     {"type": "string"},
                             "complaint_category": {"type": "string", "enum": ["general", "treatment"]},
+                            # TYPE 1 fields
                             "first_name":         {"type": "string"},
                             "last_name":          {"type": "string"},
                             "contact_number":     {"type": "string"},
+                            # TYPE 2 fields
                             "treatment_name":     {"type": "string"},
                             "dentist_name":       {"type": "string"},
                             "treatment_date":     {"type": "string"},
                             "treatment_time":     {"type": "string"},
                             "additional_info":    {"type": "string"},
-                            "appointment_id":     {"type": "integer"}
+                            "appointment_id":     {"type": "integer",
+                                                   "description": "From fetched_appointments if known"}
                         },
                         "required": ["complaint_text", "complaint_category"]
                     }
                 },
-                # ── GENERAL ENQUIRY ───────────────────────────────────────────
+                # ── BUSINESS / GENERAL ENQUIRY ────────────────────────────────
                 {
                     "type": "function", "name": "get_business_information",
-                    "description": "Get pricing, hours, payment options, offers, dentist info.",
+                    "description": "Get pricing, hours, payment, offers, dentist info.",
                     "parameters": {
                         "type": "object",
                         "properties": {"query": {"type": "string"}},
@@ -2109,7 +2153,7 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "get_insurance_information",
-                    "description": "Get health insurance info.",
+                    "description": "Get health insurance info. Insurance questions only.",
                     "parameters": {
                         "type": "object",
                         "properties": {"query": {"type": "string"}},
@@ -2118,7 +2162,7 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "get_warranty_information",
-                    "description": "Get dental warranty policy.",
+                    "description": "Get dental warranty policy. Warranty questions only.",
                     "parameters": {
                         "type": "object",
                         "properties": {"query": {"type": "string"}},
@@ -2127,12 +2171,7 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "answer_dental_question",
-                    "description": (
-                        "Answer questions about dental procedures, pre/post care, recovery. "
-                        "Uses ONLY internal knowledge base. NOT for pricing. "
-                        "NEVER suggest 'consultation'. "
-                        "ONLY reference treatments from the clinic's 18-item SERVICES list."
-                    ),
+                    "description": "Answer questions about procedures, pre/post care, recovery. NOT for pricing.",
                     "parameters": {
                         "type": "object",
                         "properties": {"query": {"type": "string"}},
@@ -2141,7 +2180,7 @@ def get_session_config() -> dict:
                 },
                 {
                     "type": "function", "name": "get_my_order_status",
-                    "description": "Check status of patient's dental order.",
+                    "description": "Check status of patient's dental order (dentures, braces, etc.).",
                     "parameters": {"type": "object", "properties": {}}
                 },
                 {
@@ -2154,18 +2193,19 @@ def get_session_config() -> dict:
                     "description": "Get past treatment history for verified patient.",
                     "parameters": {"type": "object", "properties": {}}
                 },
-                # ── SUPPLIER ──────────────────────────────────────────────────
+                # ── BUSINESS / SUPPLIER CALLS ──────────────────────────────────
                 {
                     "type": "function", "name": "check_known_supplier",
                     "description": (
-                        "Check if calling company is an authorised supplier. "
-                        "ALWAYS call first when a business caller mentions a company. "
-                        "Returns FOUND or NOT_FOUND."
+                        "Check if the calling company is an authorised supplier. "
+                        "ALWAYS call this first when a business caller mentions a company name. "
+                        "Returns FOUND (with supplier details) or NOT_FOUND."
                     ),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "company_name": {"type": "string"}
+                            "company_name": {"type": "string",
+                                             "description": "Company name as stated by caller"}
                         },
                         "required": ["company_name"]
                     }
@@ -2173,16 +2213,19 @@ def get_session_config() -> dict:
                 {
                     "type": "function", "name": "update_supplier_order",
                     "description": (
-                        "Mark a patient order as ready after a VERIFIED supplier confirms. "
-                        "Use patient_id when available, else patient_last_name. "
-                        "Also call log_supplier_call() for the same call."
+                        "Mark a patient order as ready after a VERIFIED supplier confirms delivery. "
+                        "Use patient_id when available. Falls back to patient_last_name if no ID. "
+                        "Also call log_supplier_call() to record the call."
                     ),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "patient_id":        {"type": "integer"},
-                            "patient_last_name": {"type": "string"},
-                            "product_name":      {"type": "string"}
+                            "patient_id":        {"type": "integer",
+                                                  "description": "Patient ID if provided by supplier"},
+                            "patient_last_name": {"type": "string",
+                                                  "description": "Last name fallback if no patient_id"},
+                            "product_name":      {"type": "string",
+                                                  "description": "Product being delivered e.g. Dentures, Braces"}
                         },
                         "required": ["product_name"]
                     }
@@ -2191,7 +2234,8 @@ def get_session_config() -> dict:
                     "type": "function", "name": "log_supplier_call",
                     "description": (
                         "Log a call from a supplier, agent, or business. "
-                        "For TYPE 2 agent calls. Also call alongside update_supplier_order. "
+                        "For TYPE 2 agent calls (delay, invoice, promotion). "
+                        "Also call this alongside update_supplier_order for TYPE 3 calls. "
                         "NEVER for patient calls."
                     ),
                     "parameters": {
@@ -2212,7 +2256,7 @@ def get_session_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# FUNCTION CALL HANDLER  (unchanged logic from v21)
+# FUNCTION CALL HANDLER
 # ---------------------------------------------------------------------------
 
 async def handle_function_call(function_name, arguments, call_id, session, openai_ws, disarm_fn=None):
@@ -2221,6 +2265,8 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
     result = {}
 
     try:
+
+        # ── VERIFICATION ──────────────────────────────────────────────────────
         if function_name == "verify_existing_patient":
             r = verify_by_lastname_dob(
                 last_name=arguments.get("last_name", ""),
@@ -2277,6 +2323,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             else:
                 result = {"status": "ERROR", "message": r.get("message", "Could not create account.")}
 
+        # ── APPOINTMENTS ──────────────────────────────────────────────────────
         elif function_name == "check_slot_availability":
             result = check_dentist_availability(
                 date_str=arguments.get("date", ""),
@@ -2328,8 +2375,14 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     result = {
                         "status": "SUCCESS",
                         "appointments": [
-                            {"index": i, "treatment": a["treatment"], "date": a["date"],
-                             "time": a["time"], "dentist": a["dentist"], "status": a["status"]}
+                            {
+                                "index":     i,
+                                "treatment": a["treatment"],
+                                "date":      a["date"],
+                                "time":      a["time"],
+                                "dentist":   a["dentist"],
+                                "status":    a["status"]
+                            }
                             for i, a in enumerate(appts, 1)
                         ],
                         "count": len(appts)
@@ -2357,8 +2410,13 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     r = update_appointment(appts[idx]["_id"], fields)
                     if r["status"] == "UPDATED":
                         session["fetched_appointments"] = []
-                        result = {"status": "UPDATED", "treatment": r["treatment"],
-                                  "date": r["date"], "time": r["time"], "dentist": r["dentist"]}
+                        result = {
+                            "status":    "UPDATED",
+                            "treatment": r["treatment"],
+                            "date":      r["date"],
+                            "time":      r["time"],
+                            "dentist":   r["dentist"]
+                        }
                     else:
                         result = {"status": "ERROR", "message": r.get("message", "Update failed.")}
                 else:
@@ -2379,21 +2437,35 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     r = cancel_appointment(appts[idx]["_id"], arguments.get("reason"))
                     if r["status"] == "CANCELLED":
                         session["fetched_appointments"] = []
-                        result = {"status": "CANCELLED", "treatment": r["treatment"],
-                                  "date": r["date"], "time": r["time"], "dentist": r["dentist"]}
+                        result = {
+                            "status":    "CANCELLED",
+                            "treatment": r["treatment"],
+                            "date":      r["date"],
+                            "time":      r["time"],
+                            "dentist":   r["dentist"]
+                        }
                     else:
                         result = {"status": "ERROR", "message": r.get("message", "Cancel failed.")}
                 else:
                     result = {"status": "ERROR", "message": "Invalid index. Call get_my_appointments first."}
 
+        # ── COMPLAINTS ────────────────────────────────────────────────────────
         elif function_name == "file_complaint":
+            # ✅ FIX 20: full two-type complaint handling
             category = arguments.get("complaint_category", "general").lower()
+
             if category == "treatment":
                 if not session.get("verified") or not session.get("patient_data"):
-                    result = {"status": "ERROR", "message": "Patient must be verified for a treatment complaint."}
+                    result = {"status": "ERROR",
+                              "message": "Patient must be verified for a treatment complaint."}
                 else:
                     p = session["patient_data"]
+                    # Try to find appointment_id from fetched_appointments if user mentioned one
                     appt_id = arguments.get("appointment_id")
+                    if not appt_id and session.get("fetched_appointments"):
+                        # Use first appointment as reference if none specified
+                        appt_id = None  # Let complaint_executor handle None
+
                     r = save_complaint(
                         complaint_category="treatment",
                         complaint_text=arguments.get("complaint_text", ""),
@@ -2409,8 +2481,12 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                         treatment_time=arguments.get("treatment_time"),
                         additional_info=arguments.get("additional_info"),
                     )
-                    result = r if r["status"] != "SAVED" else {"status": "SAVED", "message": r["message"]}
-            else:
+                    result = r if r["status"] != "SAVED" else {
+                        "status":  "SAVED",
+                        "message": r["message"]
+                    }
+
+            else:  # general
                 r = save_complaint(
                     complaint_category="general",
                     complaint_text=arguments.get("complaint_text", ""),
@@ -2418,8 +2494,12 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                     last_name=arguments.get("last_name"),
                     contact_number=arguments.get("contact_number"),
                 )
-                result = r if r["status"] != "SAVED" else {"status": "SAVED", "message": r["message"]}
+                result = r if r["status"] != "SAVED" else {
+                    "status":  "SAVED",
+                    "message": r["message"]
+                }
 
+        # ── GENERAL ENQUIRY ───────────────────────────────────────────────────
         elif function_name == "get_business_information":
             r = handle_business_info(user_input=arguments.get("query", ""), session=session)
             result = {"status": r.get("status", "SUCCESS"), "response": r.get("response", "")}
@@ -2444,8 +2524,9 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 if r["status"] == "SUCCESS":
                     result = {
                         "status": "SUCCESS",
-                        "orders": [{"product": o["product_name"], "status": o["order_status"],
-                                    "notes": o.get("notes", "")} for o in r["orders"]],
+                        "orders": [{"product": o["product_name"],
+                                    "status":  o["order_status"],
+                                    "notes":   o.get("notes", "")} for o in r["orders"]],
                         "count": r["count"]
                     }
                 else:
@@ -2483,7 +2564,9 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 else:
                     result = {"status": r["status"], "message": r.get("message", "None found.")}
 
+        # ── BUSINESS / SUPPLIER ────────────────────────────────────────────────
         elif function_name == "check_known_supplier":
+            # ✅ FIX 21: check supplier + store in session
             company_name = arguments.get("company_name", "")
             r = check_supplier(company_name)
             if r["status"] == "FOUND":
@@ -2500,53 +2583,65 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
                 result = {"status": "NOT_FOUND", "message": r["message"]}
 
         elif function_name == "update_supplier_order":
+            # ✅ FIX 21: update order by patient_id first, fallback to name
             patient_id   = arguments.get("patient_id")
             last_name    = arguments.get("patient_last_name")
             product_name = arguments.get("product_name", "")
+
             if patient_id:
                 r = update_order_by_patient_id(
-                    patient_id=int(patient_id), product_name=product_name,
+                    patient_id=int(patient_id),
+                    product_name=product_name,
                     new_status="ready",
-                    notes=f"Supplier confirmed — {session['supplier_context'].get('company_name','')}"
+                    notes=f"Supplier confirmed order ready — {session['supplier_context'].get('company_name','')}"
                 )
             elif last_name:
                 r = update_order_status_by_patient_name(
-                    patient_name=last_name, product_name=product_name,
+                    patient_name=last_name,
+                    product_name=product_name,
                     new_status="ready",
-                    notes=f"Supplier confirmed — {session['supplier_context'].get('company_name','')}"
+                    notes=f"Supplier confirmed order ready — {session['supplier_context'].get('company_name','')}"
                 )
             else:
-                r = {"status": "ERROR", "message": "Need patient_id or patient_last_name."}
+                r = {"status": "ERROR",
+                     "message": "Need patient_id or patient_last_name to update order."}
+
             result = r
 
         elif function_name == "log_supplier_call":
+            # ✅ FIX 21: merge caller details from session if already known
             ctx = session.get("supplier_context", {})
-            caller_name    = arguments.get("caller_name")    or ctx.get("caller_name")
-            company_name   = arguments.get("company_name")   or ctx.get("company_name")
+            caller_name    = arguments.get("caller_name") or ctx.get("caller_name")
+            company_name   = arguments.get("company_name") or ctx.get("company_name")
             contact_number = arguments.get("contact_number") or ctx.get("contact_number")
+
+            # Store whatever we learn into session
             if arguments.get("caller_name"):
                 session["supplier_context"]["caller_name"]    = arguments["caller_name"]
             if arguments.get("company_name"):
                 session["supplier_context"]["company_name"]   = arguments["company_name"]
             if arguments.get("contact_number"):
                 session["supplier_context"]["contact_number"] = arguments["contact_number"]
+
             log_business_call(
-                caller_name=caller_name, company_name=company_name,
-                contact_number=contact_number, purpose=arguments.get("purpose"),
+                caller_name=caller_name,
+                company_name=company_name,
+                contact_number=contact_number,
+                purpose=arguments.get("purpose"),
                 full_notes=json.dumps(arguments)
             )
             result = {
                 "status":  "LOGGED",
-                "message": f"Call from {caller_name or 'caller'} ({company_name or 'unknown'}) logged."
+                "message": f"Call from {caller_name or 'caller'} ({company_name or 'unknown company'}) logged. Management will follow up."
             }
 
         else:
             result = {"error": f"Unknown function: {function_name}"}
 
     except Exception as e:
-        print("========== FUNCTION ERROR ==========")
+        print("========== FUNCTION / DB ERROR ==========")
         traceback.print_exc()
-        print("====================================")
+        print("=========================================")
         result = {"status": "ERROR", "message": str(e)}
 
     if disarm_fn:
@@ -2554,7 +2649,8 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
 
     await safe_openai_send(openai_ws, {
         "type": "conversation.item.create",
-        "item": {"type": "function_call_output", "call_id": call_id,
+        "item": {"type": "function_call_output",
+                 "call_id": call_id,
                  "output": json.dumps(result)}
     })
     await safe_openai_send(openai_ws, {"type": "response.create"})
@@ -2588,21 +2684,25 @@ async def handle_media_stream(websocket: WebSocket):
     print("=" * 70)
     await websocket.accept()
 
-    call_sid    = None
-    stream_sid  = None
-    session     = None
-    openai_ws   = None
-    call_active = {"running": True}
+    call_sid      = None
+    stream_sid    = None
+    session       = None
+    openai_ws     = None
+    call_active   = {"running": True}
+    # FIX D: signals when Twilio 'start' event has set session, so OpenAI
+    # receive loop waits before sending session config (prevents race condition
+    # where session.updated fires while session is still None -> greeting lost)
+    session_ready = asyncio.Event()
 
     try:
         openai_ws = await websockets.connect(
             OPENAI_REALTIME_URL,
             additional_headers={
                 "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "OpenAI-Beta":   "realtime=v1"
+                "OpenAI-Beta": "realtime=v1"
             }
         )
-        print("[OpenAI] WebSocket connected")
+        print("[OpenAI] WebSocket connected successfully")
     except Exception as e:
         print(f"[OpenAI] Connection FAILED: {e}")
         await websocket.close()
@@ -2642,6 +2742,12 @@ async def handle_media_stream(websocket: WebSocket):
             wd["task"]  = None
 
         try:
+            # FIX D: wait for Twilio 'start' to create session before sending config
+            # Without this, session.updated fires while session is None -> greeting never sends
+            try:
+                await asyncio.wait_for(session_ready.wait(), timeout=10.0)
+            except asyncio.TimeoutError:
+                print("[OpenAI] WARNING: session_ready timeout — proceeding anyway")
             await safe_openai_send(openai_ws, get_session_config())
             print("[OpenAI] Session config sent", flush=True)
 
@@ -2651,18 +2757,32 @@ async def handle_media_stream(websocket: WebSocket):
                 print(f"[OpenAI EVENT] {event_type}", flush=True)
 
                 try:
-                    # ── Session ready → send greeting trigger ─────────────────
                     if event_type == "session.updated":
                         if session and not session.get("greeting_sent"):
                             session["greeting_sent"] = True
                             await safe_openai_send(openai_ws, {
                                 "type": "conversation.item.create",
                                 "item": {
-                                    "type": "message", "role": "user",
+                                    "type": "message",
+                                    "role": "user",
                                     "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
                                 }
                             })
-                            await safe_openai_send(openai_ws, {"type": "response.create"})
+                            # FIX E: explicit instructions force model to speak greeting
+                            # bare response.create returns empty response (no audio)
+                            await safe_openai_send(openai_ws, {
+                                "type": "response.create",
+                                "response": {
+                                    "modalities": ["text", "audio"],
+                                    "instructions": (
+                                        "The call has just connected. "
+                                        "Immediately say the greeting out loud: "
+                                        "'Hello! Thank you for calling Green Diode's Dental Clinic. "
+                                        "I'm Sarah, how may I assist you today?' "
+                                        "Then stop speaking and wait for the caller."
+                                    )
+                                }
+                            })
 
                     elif event_type == "response.output_item.added":
                         if session:
@@ -2692,62 +2812,55 @@ async def handle_media_stream(websocket: WebSocket):
                             session["audio_start_time"] = None
                             session["elapsed_ms"]       = 0
                         print("[BOT] Done speaking")
-                        try:
-                            await safe_openai_send(openai_ws, {"type": "input_audio_buffer.clear"})
-                        except Exception:
-                            pass
+                        # FIX G: do NOT send input_audio_buffer.clear here.
+                        # Clearing the buffer discards any speech the user
+                        # has already started saying while bot was finishing.
 
                     elif event_type == "response.created":
                         if session:
                             session["current_response_id"] = data.get("response", {}).get("id")
 
                     elif event_type == "response.done":
+                        # FIX F: clear response ID so barge-in guard knows
+                        # no active response exists after this point
                         if session:
-                            session["current_response_id"] = None  # ✅ FIX C: clear after done
+                            session["current_response_id"] = None
 
-                    # ✅ FIX C — BARGE-IN: trigger on ANY active response, not just is_speaking
                     elif event_type == "input_audio_buffer.speech_started":
-                        if session:
-                            # Interrupt if bot is currently speaking OR has an active response
-                            should_interrupt = (
-                                session.get("is_speaking")
-                                or session.get("current_response_id") is not None
-                                or session.get("last_assistant_item_id") is not None
-                            )
-                            if should_interrupt:
-                                print("[BARGE-IN] User interrupted — stopping bot immediately")
-                                # Calculate elapsed audio sent so far
-                                if session["audio_start_time"] is not None:
-                                    session["elapsed_ms"] = int(
-                                        (time.time() - session["audio_start_time"]) * 1000
-                                    )
-                                else:
-                                    session["elapsed_ms"] = 0
-                                # Cancel the current response
+                        # FIX F: only interrupt if bot actually has audio in-flight
+                        if session and session.get("is_speaking") and session.get("last_assistant_item_id"):
+                            print("[BARGE-IN] User interrupted — stopping bot immediately")
+                            if session["audio_start_time"] is not None:
+                                session["elapsed_ms"] = int(
+                                    (time.time() - session["audio_start_time"]) * 1000
+                                )
+                            else:
+                                session["elapsed_ms"] = 0
+                            # FIX F: only cancel if there is an active response
+                            # sending response.cancel when no response is active causes
+                            # 'Cancellation failed: no active response found' error loop
+                            if session.get("current_response_id"):
                                 try:
                                     await safe_openai_send(openai_ws, {"type": "response.cancel"})
                                 except Exception:
                                     pass
-                                # Truncate audio already streamed to Twilio
-                                if session["last_assistant_item_id"]:
-                                    try:
-                                        await safe_openai_send(openai_ws, {
-                                            "type":          "conversation.item.truncate",
-                                            "item_id":       session["last_assistant_item_id"],
-                                            "content_index": 0,
-                                            "audio_end_ms":  session["elapsed_ms"]
-                                        })
-                                    except Exception:
-                                        pass
-                                # Reset state
-                                session["audio_queue"].clear()
-                                session["last_assistant_item_id"] = None
-                                session["current_response_id"]    = None
-                                session["audio_start_time"]       = None
-                                session["elapsed_ms"]             = 0
-                                session["is_speaking"]            = False
-                            else:
-                                print("[USER] Speaking — bot already silent, no interrupt needed")
+                            if session["last_assistant_item_id"]:
+                                try:
+                                    await safe_openai_send(openai_ws, {
+                                        "type":          "conversation.item.truncate",
+                                        "item_id":       session["last_assistant_item_id"],
+                                        "content_index": 0,
+                                        "audio_end_ms":  session["elapsed_ms"]
+                                    })
+                                except Exception:
+                                    pass
+                            session["audio_queue"].clear()
+                            session["last_assistant_item_id"] = None
+                            session["audio_start_time"]       = None
+                            session["elapsed_ms"]             = 0
+                            session["is_speaking"]            = False
+                        else:
+                            print("[USER] Speaking (no barge-in needed)")
 
                     elif event_type == "input_audio_buffer.speech_stopped":
                         if session:
@@ -2819,6 +2932,7 @@ async def handle_media_stream(websocket: WebSocket):
                     session    = make_new_session(call_sid)
                     session["stream_sid"] = stream_sid
                     print(f"[Twilio] Connected | Stream: {stream_sid}")
+                    session_ready.set()  # FIX D: unblock receive_from_openai
 
                 elif event_type == "media":
                     if openai_ws and data.get("media", {}).get("payload"):
@@ -2828,7 +2942,7 @@ async def handle_media_stream(websocket: WebSocket):
                         })
 
                 elif event_type == "stop":
-                    print("[Twilio] Call ended")
+                    print("[Twilio] Call ended by Twilio")
                     call_active["running"] = False
                     if openai_ws:
                         try:
@@ -2853,6 +2967,7 @@ async def handle_media_stream(websocket: WebSocket):
             traceback.print_exc()
 
     async def keep_alive():
+        """Send silent session.update ping every 25s to prevent Twilio 60s timeout."""
         try:
             while call_active["running"]:
                 await asyncio.sleep(25)
@@ -2897,6 +3012,9 @@ async def handle_media_stream(websocket: WebSocket):
     finally:
         call_active["running"] = False
         print("[CALL END] Cleaning up...")
+        if session:
+            last = session["conversation_history"][-1]["content"] if session["conversation_history"] else "none"
+            print(f"[CALL END] Verified: {session['verified']} | Last: {last}")
         if openai_ws:
             try:
                 await openai_ws.close()
@@ -2906,7 +3024,7 @@ async def handle_media_stream(websocket: WebSocket):
 
 
 # ---------------------------------------------------------------------------
-# HEALTH CHECK + RUN
+# HEALTH CHECK
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
@@ -2914,6 +3032,16 @@ def health():
     return {"status": "ok"}
 
 
+# ---------------------------------------------------------------------------
+# RUN
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     import uvicorn
+    print("=" * 70)
+    print("  DentalBot v2")
+    print(f"  Voice    : {VOICE}")
+    print(f"  Fixes    : booking extraction | DOB any-format | complaint two-type |")
+    print(f"             supplier check | order-by-patient-id | no-repeat-questions")
+    print("=" * 70)
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

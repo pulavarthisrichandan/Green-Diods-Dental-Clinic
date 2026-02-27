@@ -1615,7 +1615,7 @@ VOICE                    = "coral"
 TEMPERATURE              = 0.8
 VAD_THRESHOLD            = 0.90   # raised: reduces false triggers from phone line noise
 PREFIX_PADDING_MS        = 500    # raised: needs more audio before treating as speech
-SILENCE_DURATION_MS      = 700    # lowered: respond quickly after real speech ends
+SILENCE_DURATION_MS      = 700    # lowered: still responds quickly after real speech
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 # ---------------------------------------------------------------------------
@@ -1706,7 +1706,7 @@ SYSTEM_INSTRUCTIONS = (
     "Do NOT ask for general questions about address, hours, pricing, insurance.\n\n"
 
     "CALL START BEHAVIOUR:\n"
-    "After the greeting, STOP and WAIT silently for the caller to say what they need.\n"
+    "After greeting, STOP and WAIT silently for the caller to say what they need.\n"
     "Do NOT ask 'Are you an existing or new patient?' right after the greeting.\n"
     "Listen to their intent first, then decide.\n\n"
 
@@ -2684,7 +2684,8 @@ async def handle_media_stream(websocket: WebSocket):
     session       = None
     openai_ws     = None
     call_active   = {"running": True}
-    session_ready = asyncio.Event()  # FIX D: unblocks OpenAI loop after Twilio 'start'
+    # FIX D: prevents race where session.updated fires before Twilio 'start' sets session
+    session_ready = asyncio.Event()
 
     try:
         openai_ws = await websockets.connect(
@@ -2734,8 +2735,8 @@ async def handle_media_stream(websocket: WebSocket):
             wd["task"]  = None
 
         try:
-            # FIX D: wait for Twilio 'start' to set session before sending config
-            # Without this wait, session.updated fires while session=None -> greeting lost
+            # FIX D: wait for Twilio 'start' before sending session config
+            # Prevents session.updated firing while session is still None
             try:
                 await asyncio.wait_for(session_ready.wait(), timeout=10.0)
             except asyncio.TimeoutError:
@@ -2760,8 +2761,10 @@ async def handle_media_stream(websocket: WebSocket):
                                     "content": [{"type": "input_text", "text": "[CALL_STARTED]"}]
                                 }
                             })
-                            # FIX E: bare response.create returns empty response (no audio).
-                            # Explicit instructions FORCE the model to speak the greeting.
+                            # FIX E: wait 300ms so OpenAI commits the item before
+                            # response.create runs — without this delay the model
+                            # sees an empty conversation and returns empty response
+                            await asyncio.sleep(0.3)
                             await safe_openai_send(openai_ws, {
                                 "type": "response.create",
                                 "response": {
@@ -2769,9 +2772,9 @@ async def handle_media_stream(websocket: WebSocket):
                                     "instructions": (
                                         "The phone call has just connected. "
                                         "Say the greeting out loud RIGHT NOW: "
-                                        "'Hello! Thank you for calling Green Diode's Dental Clinic. "
+                                        "'Hello! Thank you for calling Green Diode\'s Dental Clinic. "
                                         "I\'m Sarah, how may I assist you today?' "
-                                        "Speak it immediately, then stop and wait silently for the caller."
+                                        "Speak it immediately then stop and wait silently for the caller."
                                     )
                                 }
                             })
@@ -2804,20 +2807,21 @@ async def handle_media_stream(websocket: WebSocket):
                             session["audio_start_time"] = None
                             session["elapsed_ms"]       = 0
                         print("[BOT] Done speaking")
-                        # FIX G: removed input_audio_buffer.clear — it was discarding
-                        # user speech that started while bot was finishing its sentence.
+                        # FIX G: do NOT clear input_audio_buffer here —
+                        # it discards speech the user already started saying
+                        # while the bot was finishing its sentence.
 
                     elif event_type == "response.created":
                         if session:
                             session["current_response_id"] = data.get("response", {}).get("id")
 
                     elif event_type == "response.done":
-                        # FIX F: clear so barge-in knows no active response after this
+                        # FIX F: clear so barge-in knows no active response remains
                         if session:
                             session["current_response_id"] = None
 
                     elif event_type == "input_audio_buffer.speech_started":
-                        # FIX F: only interrupt when bot truly has audio in-flight
+                        # FIX F: only interrupt when bot has audio truly in-flight
                         if (session
                                 and session.get("is_speaking")
                                 and session.get("last_assistant_item_id")):
@@ -2828,9 +2832,8 @@ async def handle_media_stream(websocket: WebSocket):
                                 )
                             else:
                                 session["elapsed_ms"] = 0
-                            # FIX F: only cancel if there IS an active response
-                            # calling response.cancel on a finished response causes
-                            # 'Cancellation failed: no active response found' error
+                            # FIX F: only cancel if an active response exists
+                            # cancelling a finished response → 'no active response' error
                             if session.get("current_response_id"):
                                 try:
                                     await safe_openai_send(openai_ws, {"type": "response.cancel"})
@@ -2924,7 +2927,7 @@ async def handle_media_stream(websocket: WebSocket):
                     session    = make_new_session(call_sid)
                     session["stream_sid"] = stream_sid
                     print(f"[Twilio] Connected | Stream: {stream_sid}")
-                    session_ready.set()  # FIX D: signal session is ready
+                    session_ready.set()  # FIX D: unblock receive_from_openai
 
                 elif event_type == "media":
                     if openai_ws and data.get("media", {}).get("payload"):

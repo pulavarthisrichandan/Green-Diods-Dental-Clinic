@@ -1962,8 +1962,8 @@ def get_session_config() -> dict:
             "voice": VOICE,
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
-            # "input_audio_transcription": {"model": "whisper-1"},
-            "input_audio_transcription": {"model": "gpt-4o-transcribe"},
+            "input_audio_transcription": {"model": "whisper-1"},
+            # "input_audio_transcription": {"model": "gpt-4o-transcribe"},
             "turn_detection": {
                 "type": "server_vad",
                 "threshold": VAD_THRESHOLD,
@@ -2803,17 +2803,22 @@ async def handle_media_stream(websocket: WebSocket):
 
                     elif event_type == "response.audio.delta":
                         disarm_watchdog()
-                        if stream_sid and "delta" in data:
+                        if not stream_sid:
+                            print("[WARN] Audio delta dropped — stream_sid not set yet")
+                        elif "delta" in data:
                             if session:
                                 session["is_speaking"] = True
                                 session["audio_queue"].append(data["delta"])
                                 if session["audio_start_time"] is None:
                                     session["audio_start_time"] = time.time()
-                            await websocket.send_json({
-                                "event":     "media",
-                                "streamSid": stream_sid,
-                                "media":     {"payload": data["delta"]}
-                            })
+                            try:
+                                await websocket.send_json({
+                                    "event": "media",
+                                    "streamSid": stream_sid,
+                                    "media": {"payload": data["delta"]}
+                                })
+                            except Exception as e:
+                                print(f"[AUDIO SEND ERROR] {e}")
 
                     elif event_type == "response.audio.done":
                         if session:

@@ -92,11 +92,11 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
 OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
-VOICE                    = "shimmer"
-TEMPERATURE              = 0.8
-VAD_THRESHOLD            = 0.75 
-PREFIX_PADDING_MS        = 300
-SILENCE_DURATION_MS      = 900
+VOICE                    = "alloy" #shimmer
+TEMPERATURE              = 0.5
+VAD_THRESHOLD            = 0.88 
+PREFIX_PADDING_MS        = 450
+SILENCE_DURATION_MS      = 550
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ SYSTEM_INSTRUCTIONS = (
     "Never invent treatments.\n"
 
     "CLINIC DETAILS (from memory, no function call):\n"
-    "- Address: 123, Building, Melbourne Central, Melbourne, Victoria\n"
+    "- Address: 123, Any Street, Any Suburb, Any State \n"
     "- Phone: 03 6160 3456\n"
     "- Hours: Monday–Friday 9:00 AM–6:00 PM, Saturday–Sunday CLOSED\n\n"
 
@@ -1315,7 +1315,8 @@ async def handle_media_stream(websocket: WebSocket):
                         pass  # intentionally empty
 
                     elif event_type == "input_audio_buffer.speech_started":
-
+                        if not session:
+                            continue
                         if session and session.get("is_speaking"):
 
                             print("[BARGE-IN] User interrupted — stopping bot")
@@ -1390,7 +1391,14 @@ async def handle_media_stream(websocket: WebSocket):
                         pending_args = ""
 
                     elif event_type == "conversation.item.input_audio_transcription.completed":
+
                         transcript = data.get("transcript", "")
+                        confidence = data.get("confidence", 1.0)
+
+                        if confidence < 0.65:
+                            print("[LOW CONFIDENCE] Ignoring noisy speech")
+                            return
+
                         if transcript and session:
                             print(f"[USER] {transcript}")
                             update_history(session, "user", transcript)

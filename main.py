@@ -16,7 +16,6 @@ Fixes applied (cumulative):
   22. NEVER ask repeated questions in any flow
 """
 
-from ast import arguments
 import os
 import json
 import asyncio
@@ -48,8 +47,7 @@ from general_enquiry.enquiry_executor import (
     get_patient_orders, get_upcoming_appointments, get_past_appointments
 )
 from knowledge_base.kb_controller import handle_kb_query
-from utils.phone_utils import extract_phone_from_text, format_phone_for_speech
-from utils.date_time_utils import normalize_dob
+from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
 
 from datetime import timedelta
 import re
@@ -93,10 +91,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-preview"
-VOICE                    = "moral"
-TEMPERATURE              = 0.75
-VAD_THRESHOLD            = 0.95
+OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
+VOICE                    = "shimmer"
+TEMPERATURE              = 0.8
+VAD_THRESHOLD            = 0.75 
 PREFIX_PADDING_MS        = 300
 SILENCE_DURATION_MS      = 900
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
@@ -201,13 +199,7 @@ SYSTEM_INSTRUCTIONS = (
     
 
     "EXISTING PATIENT FLOW:\n"
-    "   Step 1: Ask last name.\n"
-        "After user answers, ALWAYS reconfirm:\n"
-        "Just to confirm, that's [Last Name] — is that correct?\n"
-        "If user says NO:\n"
-            "Ask them to spell it letter by letter.\n"
-            "Repeat it back naturally.\n"
-            "Confirm again before proceeding.\n"
+    "  Step 1: Ask last name\n"
     "  Step 2: Ask date of birth\n"
     "  Step 3: ALWAYS convert DOB to DD-MON-YYYY and read back:\n"
     "          'Just to confirm, that's the [DD] of [Month] [YYYY] — is that right?'\n"
@@ -223,31 +215,12 @@ SYSTEM_INSTRUCTIONS = (
     "    NOT_FOUND      -> offer to retry or create new account\n\n"
 
     "NEW PATIENT FLOW (no skipping):\n"
-    "   Step 1: Ask first name.\n"
-        "After user answers, ALWAYS reconfirm:\n"
-        "I heard [First Name] — is that correct?\n"
-        "If user says NO:\n"
-            "Ask them to spell it letter by letter.\n"
-            "Repeat spelling back naturally.\n"
-            "Confirm again before continuing.\n"
-
-    "   Step 2: Ask last name.\n"
-            "After user answers, ALWAYS reconfirm:\n"
-            "And that's [Last Name] — is that right?\n"
-            "If user says NO:\n"
-                "Ask them to spell it.\n"
-                "Repeat spelling back naturally.\n"
-                "Confirm again.\n"
-
-    "   Step 3: Once both names confirmed, say:\n"
-            "Perfect, so that's [First Name] [Last Name] — did I get everything right?\n"
-            "Wait for YES before continuing.\n"
-    "  Step 4: DOB (confirm as DD-MON-YYYY)\n"
-    "  Step 5: contact (read back digit by digit)"
-    "  Step 6: Ask clearly: 'Do you have private health insurance? If yes, which provider?, or if you want you can skip this'\n"
-    "  Step 7: insurance is REQUIRED (if none, store as \"None\")\n"
-    "  Step 8: call create_new_patient() immediately\n"
-    "  Step 9: wait for status=CREATED, then say account is ready\n\n"
+    "  Step 1: first name  Step 2: last name  Step 3: DOB (confirm as DD-MON-YYYY)\n"
+    "  Step 4: contact (read back digit by digit)"
+    "  Step 5: Ask clearly: 'Do you have private health insurance? If yes, which provider?, or if you want you can skip this'\n"
+    "  Step 6: insurance is REQUIRED (if none, store as \"None\")\n"
+    "  Step 7: call create_new_patient() immediately\n"
+    "  Step 8: wait for status=CREATED, then say account is ready\n\n"
 
     "After verification: patient is verified for the entire call.\n"
     "Use their first name. NEVER ask name/contact again.\n\n"
@@ -348,39 +321,6 @@ SYSTEM_INSTRUCTIONS = (
     "  9. YES -> call file_complaint(category=treatment, all fields)\n"
     "  10. Say: 'Logged! Our team will review and contact you within 2 business days.'\n"
     "\n"
-    # """
-    # COMPLAINT FLOW RULES:
-
-    # If complaint is related to treatment (Type 2 complaint):
-
-    # - DO NOT ask whether the user is an existing patient.
-    # - Immediately respond empathetically:
-    #     "I'm really sorry to hear that. I'll help you with that right away."
-
-    # - Then say:
-    #     "Could I please get your treatment details so I can register the complaint?"
-
-    # - Then begin verification:
-    #     Step 1: Ask last name (confirm it).
-    #     Step 2: Ask date of birth (confirm in DD-MON-YYYY).
-    #     Step 3: If multiple matches, ask contact number.
-
-    # - After verification:
-    #     Ask which treatment the complaint is regarding.
-    #     Allowed treatments:
-    #         - cleaning
-    #         - filling
-    #         - root canal
-    #         - extraction
-    #         - consultation
-
-    # - Then ask for full complaint description.
-    # - Then register complaint in database.
-
-    # If complaint is general (not treatment related):
-    # - Collect name and contact number only.
-    # - No verification required.
-    # """
     "COMPLAINT RULES:\n"
     "  - Ask TYPE 1 or TYPE 2 question FIRST — never jump to verification\n"
     "  - TYPE 1: NEVER ask last name alone first, NEVER ask DOB, NEVER verify\n"
@@ -814,7 +754,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
         if function_name == "verify_existing_patient":
             r = verify_by_lastname_dob(
                 last_name=arguments.get("last_name", ""),
-                dob=arguments.get("date_of_birth", "")
+                dob=normalize_dob(arguments.get("date_of_birth", ""))
             )
             if r["status"] == "VERIFIED":
                 session["patient_data"] = r
@@ -835,7 +775,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             phone = extract_phone_from_text(arguments.get("contact_number", ""))
             r = verify_by_lastname_dob_contact(
                 last_name=arguments.get("last_name", ""),
-                dob=arguments.get("date_of_birth", ""),
+                dob=normalize_dob(arguments.get("date_of_birth", "")),
                 contact_number=phone
             )
             if r["status"] == "VERIFIED":
@@ -854,12 +794,10 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             if not insurance or insurance.strip() == "":
                 insurance = "None"
 
-            first_name = arguments.get("first_name", "").strip().title()
-            last_name  = arguments.get("last_name", "").strip().title()
             r = create_new_patient(
                 first_name=arguments.get("first_name", ""),
                 last_name=arguments.get("last_name", ""),
-                dob=arguments.get("date_of_birth", ""),
+                dob=normalize_dob(arguments.get("date_of_birth", "")),
                 contact_number=phone,
                 insurance_info=insurance
             )

@@ -20,10 +20,12 @@ from contextlib import contextmanager
 # DATABASE URL
 # ─────────────────────────────────────────────────────────────────────────────
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:NtHJJyplErqWtyuOVmyRqIftIiAPCUwL@shinkansen.proxy.rlwy.net:28107/railway"
-)
+# DATABASE_URL = os.getenv(
+#     "DATABASE_URL",
+#     "postgresql://postgres:NtHJJyplErqWtyuOVmyRqIftIiAPCUwL@shinkansen.proxy.rlwy.net:28107/railway"
+# )
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FORCE IPv4 — fixes Railway cloud IPv6 routing issue
@@ -59,7 +61,7 @@ def get_pool() -> psycopg2.pool.SimpleConnectionPool:
                 print("[DB] Initialising connection pool...")
                 _pool = psycopg2.pool.SimpleConnectionPool(
                     1,    # min connections — always keep 1 alive
-                    10,   # max connections — handles concurrent callers
+                    3,   # max connections — handles concurrent callers
                     dsn=DATABASE_URL,
                     sslmode="prefer",
                     connect_timeout=10

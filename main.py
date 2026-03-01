@@ -16,6 +16,7 @@ Fixes applied (cumulative):
   22. NEVER ask repeated questions in any flow
 """
 
+from ast import arguments
 import os
 import json
 import asyncio
@@ -200,7 +201,13 @@ SYSTEM_INSTRUCTIONS = (
     
 
     "EXISTING PATIENT FLOW:\n"
-    "  Step 1: Ask last name\n"
+    "   Step 1: Ask last name.\n"
+        "After user answers, ALWAYS reconfirm:\n"
+        "Just to confirm, that's [Last Name] — is that correct?\n"
+        "If user says NO:\n"
+            "Ask them to spell it letter by letter.\n"
+            "Repeat it back naturally.\n"
+            "Confirm again before proceeding.\n"
     "  Step 2: Ask date of birth\n"
     "  Step 3: ALWAYS convert DOB to DD-MON-YYYY and read back:\n"
     "          'Just to confirm, that's the [DD] of [Month] [YYYY] — is that right?'\n"
@@ -216,12 +223,31 @@ SYSTEM_INSTRUCTIONS = (
     "    NOT_FOUND      -> offer to retry or create new account\n\n"
 
     "NEW PATIENT FLOW (no skipping):\n"
-    "  Step 1: first name  Step 2: last name  Step 3: DOB (confirm as DD-MON-YYYY)\n"
-    "  Step 4: contact (read back digit by digit)"
-    "  Step 5: Ask clearly: 'Do you have private health insurance? If yes, which provider?, or if you want you can skip this'\n"
-    "  Step 6: insurance is REQUIRED (if none, store as \"None\")\n"
-    "  Step 7: call create_new_patient() immediately\n"
-    "  Step 8: wait for status=CREATED, then say account is ready\n\n"
+    "   Step 1: Ask first name.\n"
+        "After user answers, ALWAYS reconfirm:\n"
+        "I heard [First Name] — is that correct?\n"
+        "If user says NO:\n"
+            "Ask them to spell it letter by letter.\n"
+            "Repeat spelling back naturally.\n"
+            "Confirm again before continuing.\n"
+
+    "   Step 2: Ask last name.\n"
+            "After user answers, ALWAYS reconfirm:\n"
+            "And that's [Last Name] — is that right?\n"
+            "If user says NO:\n"
+                "Ask them to spell it.\n"
+                "Repeat spelling back naturally.\n"
+                "Confirm again.\n"
+
+    "   Step 3: Once both names confirmed, say:\n"
+            "Perfect, so that's [First Name] [Last Name] — did I get everything right?\n"
+            "Wait for YES before continuing.\n"
+    "  Step 4: DOB (confirm as DD-MON-YYYY)\n"
+    "  Step 5: contact (read back digit by digit)"
+    "  Step 6: Ask clearly: 'Do you have private health insurance? If yes, which provider?, or if you want you can skip this'\n"
+    "  Step 7: insurance is REQUIRED (if none, store as \"None\")\n"
+    "  Step 8: call create_new_patient() immediately\n"
+    "  Step 9: wait for status=CREATED, then say account is ready\n\n"
 
     "After verification: patient is verified for the entire call.\n"
     "Use their first name. NEVER ask name/contact again.\n\n"
@@ -795,6 +821,8 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             if not insurance or insurance.strip() == "":
                 insurance = "None"
 
+            first_name = arguments.get("first_name", "").strip().title()
+            last_name  = arguments.get("last_name", "").strip().title()
             r = create_new_patient(
                 first_name=arguments.get("first_name", ""),
                 last_name=arguments.get("last_name", ""),

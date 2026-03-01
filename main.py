@@ -95,8 +95,8 @@ if not OPENAI_API_KEY:
 
 OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-preview"
 VOICE                    = "moral"
-TEMPERATURE              = 0.8
-VAD_THRESHOLD            = 0.75 
+TEMPERATURE              = 0.75
+VAD_THRESHOLD            = 0.95
 PREFIX_PADDING_MS        = 300
 SILENCE_DURATION_MS      = 900
 CLOUD_RUN_WSS_BASE       = "wss://green-diods-dental-clinic-production.up.railway.app"
@@ -511,7 +511,7 @@ def get_session_config() -> dict:
             "voice":                     VOICE,
             "input_audio_format":        "g711_ulaw",
             "output_audio_format":       "g711_ulaw",
-            "input_audio_transcription": {"model": "whisper-1"},
+            "input_audio_transcription": {"model": "whisper-1", "language": "en","temperature": 0},
             "turn_detection": {
                 "type":                "server_vad",
                 "threshold":           VAD_THRESHOLD,

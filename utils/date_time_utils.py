@@ -188,34 +188,36 @@ def get_next_available_slot(
 
 def dob_to_db_format(dob_str: str) -> str:
     """
-    Normalise DOB string to DD-MM-YYYY storage format.
-
-    ✅ Handles ALL formats produced by normalize_dob() and speech input:
-        "12 December 2006"   ← output of normalize_dob() — WAS BROKEN, NOW FIXED
-        "12 Dec 2006"
-        "12-12-2006"
-        "12/12/2006"
-        "2006-12-12"
+    Convert ANY accepted DOB string into YYYY-MM-DD format
+    for safe DATE comparison in PostgreSQL.
     """
+
     if not dob_str:
         return ""
 
-    # ✅ Full month name: "12 December 2006" or "12 Dec 2006"
+    dob_str = dob_str.strip()
+
+    # Try full month formats (5 December 2003, 5 Dec 2003)
     for fmt in ["%d %B %Y", "%d %b %Y"]:
         try:
-            return datetime.strptime(dob_str.strip(), fmt).strftime("%d-%m-%Y")
+            return datetime.strptime(dob_str, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
 
-    # Numeric formats: DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD
+    # Try numeric formats
     for fmt in ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"]:
         try:
-            return datetime.strptime(dob_str.strip(), fmt).strftime("%d-%m-%Y")
+            return datetime.strptime(dob_str, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
 
-    # Last resort — return as-is
-    return dob_str.strip()
+    # If already valid date object string
+    try:
+        return str(datetime.fromisoformat(dob_str).date())
+    except Exception:
+        pass
+
+    return dob_str
 
 
 def normalize_dob(dob_str: str) -> str:

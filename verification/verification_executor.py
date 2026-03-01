@@ -30,10 +30,10 @@ def verify_by_lastname_dob(last_name: str, dob: str) -> dict:
         with db_cursor() as (cursor, conn):
             cursor.execute("""
                 SELECT patient_id, first_name, last_name,
-                       date_of_birth, contact_number, insurance_info
+                    date_of_birth, contact_number, insurance_info
                 FROM patients
-                WHERE LOWER(last_name) = %s
-                AND date_of_birth = TO_DATE(%s, 'DD-MM-YYYY')
+                WHERE TRIM(LOWER(last_name)) = TRIM(%s)
+                AND date_of_birth = %s::date
             """, (last_name_clean, dob_clean))
             rows = cursor.fetchall()
 
@@ -88,10 +88,10 @@ def verify_by_lastname_dob_contact(last_name: str, dob: str, contact_number: str
         with db_cursor() as (cursor, conn):
             cursor.execute("""
                 SELECT patient_id, first_name, last_name,
-                       date_of_birth, contact_number, insurance_info
+                    date_of_birth, contact_number, insurance_info
                 FROM patients
-                WHERE LOWER(last_name) = %s
-                AND date_of_birth = TO_DATE(%s, 'DD-MM-YYYY')
+                WHERE TRIM(LOWER(last_name)) = TRIM(%s)
+                AND date_of_birth = %s::date
             """, (last_name_clean, dob_clean))
             rows = cursor.fetchall()
 
@@ -142,10 +142,10 @@ def create_new_patient(first_name: str, last_name: str, dob: str,
             cursor.execute("""
                 INSERT INTO patients
                     (first_name, last_name, date_of_birth, contact_number, insurance_info)
-                VALUES (%s, %s, TO_DATE(%s, 'DD-MM-YYYY'), %s, %s)
+                VALUES (%s, %s, %s::date, %s, %s)
                 RETURNING patient_id
             """, (
-                title_case(first_name),   # ✅ title case before storing
+                title_case(first_name),
                 title_case(last_name),
                 dob_clean,
                 contact_clean,

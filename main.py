@@ -93,7 +93,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-preview"
+OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-preview"
 VOICE                    = "moral"
 TEMPERATURE              = 0.75
 VAD_THRESHOLD            = 0.95
@@ -511,7 +511,7 @@ def get_session_config() -> dict:
             "voice":                     VOICE,
             "input_audio_format":        "g711_ulaw",
             "output_audio_format":       "g711_ulaw",
-            "input_audio_transcription": {"model": "whisper-1", "language": "en","temperature": 0},
+            "input_audio_transcription": {"model": "whisper-1"},
             "turn_detection": {
                 "type":                "server_vad",
                 "threshold":           VAD_THRESHOLD,

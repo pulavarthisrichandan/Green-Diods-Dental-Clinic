@@ -7,6 +7,7 @@ from db.db_connection import db_cursor
 from utils.phone_utils import normalize_phone
 from utils.text_utils import title_case
 from utils.date_time_utils import dob_to_db_format
+from utils.date_time_utils import normalize_dob
 import traceback
 
 
@@ -20,6 +21,7 @@ def verify_by_lastname_dob(last_name: str, dob: str) -> dict:
             "status":  "MISSING_INFO",
             "message": "Last name and date of birth are both required."
         }
+    dob = normalize_dob(dob)
 
     dob_clean       = dob_to_db_format(dob)
     last_name_clean = last_name.strip().lower()   # ✅ lowercase for case-insensitive match

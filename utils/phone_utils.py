@@ -124,42 +124,43 @@ def phone_confirmation_prompt(extracted_phone: str) -> str:
 # DOB NORMALIZER (used in main.py from this module)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def normalize_dob(dob_str: str) -> str:
-    """
-    Cleans DOB string from speech input.
-    - Strips ordinal suffixes: 12th → 12, 1st → 1, 3rd → 3
-    - Converts numeric months to names: 12/12/2006 → 12 December 2006
-    - Output is always: "DD MonthName YYYY" e.g. "12 December 2006"
-      which dob_to_db_format() in date_time_utils.py can then parse.
-    """
-    if not dob_str:
-        return dob_str
+# def normalize_dob(dob_str: str) -> str:
+#     """
+#     Cleans DOB string from speech input.
+#     - Strips ordinal suffixes: 12th → 12, 1st → 1, 3rd → 3
+#     - Converts numeric months to names: 12/12/2006 → 12 December 2006
+#     - Output is always: "DD MonthName YYYY" e.g. "12 December 2006"
+#       which dob_to_db_format() in date_time_utils.py can then parse.
+#     """
+#     if not dob_str:
+#         return dob_str
 
-    dob_str = dob_str.strip()
+#     dob_str = dob_str.strip()
 
-    # Remove ordinal suffixes (1st, 2nd, 3rd, 12th, 21st etc.)
-    dob_str = re.sub(r'\b(\d{1,2})(st|nd|rd|th)\b', r'\1', dob_str, flags=re.IGNORECASE)
+#     # Remove ordinal suffixes (1st, 2nd, 3rd, 12th, 21st etc.)
+#     dob_str = re.sub(r'\b(\d{1,2})(st|nd|rd|th)\b', r'\1', dob_str, flags=re.IGNORECASE)
 
-    # Handle numeric-only formats: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-    numeric_match = re.match(
-        r'^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$', dob_str.strip()
-    )
-    if numeric_match:
-        day   = numeric_match.group(1)
-        month = numeric_match.group(2)
-        year  = numeric_match.group(3)
-        month_name = MONTH_NAMES.get(month, month)
-        return f"{day} {month_name} {year}"
+#     # Handle numeric-only formats: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+#     numeric_match = re.match(
+#         r'^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$', dob_str.strip()
+#     )
+#     if numeric_match:
+#         day   = numeric_match.group(1)
+#         month = numeric_match.group(2)
+#         year  = numeric_match.group(3)
+#         month_name = MONTH_NAMES.get(month, month)
+#         return f"{day} {month_name} {year}"
 
-    # Handle "12 12 2006" (space-separated numbers)
-    spaced_match = re.match(
-        r'^(\d{1,2})\s+(\d{1,2})\s+(\d{4})$', dob_str.strip()
-    )
-    if spaced_match:
-        day   = spaced_match.group(1)
-        month = spaced_match.group(2)
-        year  = spaced_match.group(3)
-        month_name = MONTH_NAMES.get(month, month)
-        return f"{day} {month_name} {year}"
+#     # Handle "12 12 2006" (space-separated numbers)
+#     spaced_match = re.match(
+#         r'^(\d{1,2})\s+(\d{1,2})\s+(\d{4})$', dob_str.strip()
+#     )
+#     if spaced_match:
+#         day   = spaced_match.group(1)
+#         month = spaced_match.group(2)
+#         year  = spaced_match.group(3)
+#         month_name = MONTH_NAMES.get(month, month)
+#         return f"{day} {month_name} {year}"
 
-    return dob_str
+#     return dob_str
+

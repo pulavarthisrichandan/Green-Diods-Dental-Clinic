@@ -216,3 +216,42 @@ def dob_to_db_format(dob_str: str) -> str:
 
     # Last resort — return as-is
     return dob_str.strip()
+
+
+def normalize_dob(dob_str: str) -> str:
+    """
+    Accept ANY spoken or numeric DOB format and convert to DD-MM-YYYY.
+    Handles:
+      - 5th December 2003
+      - December 5th 2003
+      - 5 of December 2003
+      - 05/12/2003
+      - 2003-12-05
+    """
+
+    if not dob_str:
+        return ""
+
+    s = dob_str.lower().strip()
+
+    # Remove ordinal suffixes (st, nd, rd, th)
+    s = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", s)
+
+    # Remove "of"
+    s = s.replace(" of ", " ")
+
+    # Try full month formats
+    for fmt in ["%d %B %Y", "%d %b %Y", "%B %d %Y", "%b %d %Y"]:
+        try:
+            return datetime.strptime(s, fmt).strftime("%d-%m-%Y")
+        except ValueError:
+            continue
+
+    # Try numeric formats
+    for fmt in ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"]:
+        try:
+            return datetime.strptime(s, fmt).strftime("%d-%m-%Y")
+        except ValueError:
+            continue
+
+    return dob_str.strip()

@@ -47,7 +47,8 @@ from general_enquiry.enquiry_executor import (
     get_patient_orders, get_upcoming_appointments, get_past_appointments
 )
 from knowledge_base.kb_controller import handle_kb_query
-from utils.phone_utils import extract_phone_from_text, format_phone_for_speech, normalize_dob
+from utils.phone_utils import extract_phone_from_text, format_phone_for_speech
+from utils.date_time_utils import normalize_dob
 
 from datetime import timedelta
 import re

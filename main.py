@@ -755,7 +755,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
         if function_name == "verify_existing_patient":
             r = verify_by_lastname_dob(
                 last_name=arguments.get("last_name", ""),
-                dob=normalize_dob(arguments.get("date_of_birth", ""))
+                dob=arguments.get("date_of_birth", "")
             )
             if r["status"] == "VERIFIED":
                 session["patient_data"] = r
@@ -776,7 +776,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             phone = extract_phone_from_text(arguments.get("contact_number", ""))
             r = verify_by_lastname_dob_contact(
                 last_name=arguments.get("last_name", ""),
-                dob=normalize_dob(arguments.get("date_of_birth", "")),
+                dob=arguments.get("date_of_birth", ""),
                 contact_number=phone
             )
             if r["status"] == "VERIFIED":
@@ -798,7 +798,7 @@ async def handle_function_call(function_name, arguments, call_id, session, opena
             r = create_new_patient(
                 first_name=arguments.get("first_name", ""),
                 last_name=arguments.get("last_name", ""),
-                dob=normalize_dob(arguments.get("date_of_birth", "")),
+                dob=arguments.get("date_of_birth", ""),
                 contact_number=phone,
                 insurance_info=insurance
             )

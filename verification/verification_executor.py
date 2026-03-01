@@ -33,7 +33,7 @@ def verify_by_lastname_dob(last_name: str, dob: str) -> dict:
                        date_of_birth, contact_number, insurance_info
                 FROM patients
                 WHERE LOWER(last_name) = %s
-                  AND date_of_birth    = %s
+                AND date_of_birth = TO_DATE(%s, 'DD-MM-YYYY')
             """, (last_name_clean, dob_clean))
             rows = cursor.fetchall()
 
@@ -91,7 +91,7 @@ def verify_by_lastname_dob_contact(last_name: str, dob: str, contact_number: str
                        date_of_birth, contact_number, insurance_info
                 FROM patients
                 WHERE LOWER(last_name) = %s
-                  AND date_of_birth    = %s
+                AND date_of_birth = TO_DATE(%s, 'DD-MM-YYYY')
             """, (last_name_clean, dob_clean))
             rows = cursor.fetchall()
 
@@ -142,7 +142,7 @@ def create_new_patient(first_name: str, last_name: str, dob: str,
             cursor.execute("""
                 INSERT INTO patients
                     (first_name, last_name, date_of_birth, contact_number, insurance_info)
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, TO_DATE(%s, 'DD-MM-YYYY'), %s, %s)
                 RETURNING patient_id
             """, (
                 title_case(first_name),   # ✅ title case before storing

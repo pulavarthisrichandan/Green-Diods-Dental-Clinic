@@ -93,8 +93,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
 
-OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
-VOICE                    = "shimmer"
+OPENAI_REALTIME_URL      = "wss://api.openai.com/v1/realtime?model=gpt-4o-preview"
+VOICE                    = "moral"
 TEMPERATURE              = 0.8
 VAD_THRESHOLD            = 0.75 
 PREFIX_PADDING_MS        = 300
@@ -348,6 +348,39 @@ SYSTEM_INSTRUCTIONS = (
     "  9. YES -> call file_complaint(category=treatment, all fields)\n"
     "  10. Say: 'Logged! Our team will review and contact you within 2 business days.'\n"
     "\n"
+    # """
+    # COMPLAINT FLOW RULES:
+
+    # If complaint is related to treatment (Type 2 complaint):
+
+    # - DO NOT ask whether the user is an existing patient.
+    # - Immediately respond empathetically:
+    #     "I'm really sorry to hear that. I'll help you with that right away."
+
+    # - Then say:
+    #     "Could I please get your treatment details so I can register the complaint?"
+
+    # - Then begin verification:
+    #     Step 1: Ask last name (confirm it).
+    #     Step 2: Ask date of birth (confirm in DD-MON-YYYY).
+    #     Step 3: If multiple matches, ask contact number.
+
+    # - After verification:
+    #     Ask which treatment the complaint is regarding.
+    #     Allowed treatments:
+    #         - cleaning
+    #         - filling
+    #         - root canal
+    #         - extraction
+    #         - consultation
+
+    # - Then ask for full complaint description.
+    # - Then register complaint in database.
+
+    # If complaint is general (not treatment related):
+    # - Collect name and contact number only.
+    # - No verification required.
+    # """
     "COMPLAINT RULES:\n"
     "  - Ask TYPE 1 or TYPE 2 question FIRST — never jump to verification\n"
     "  - TYPE 1: NEVER ask last name alone first, NEVER ask DOB, NEVER verify\n"
